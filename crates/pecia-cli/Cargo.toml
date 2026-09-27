@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "The pecia command-line interface: one binary, and `pecia mcp` for MCP clients."
+description = "Git-backed issue tracker and work ledger for developers and AI coding agents; CLI and MCP server."
 
 [[bin]]
 name = "pecia"

@@ -3,7 +3,7 @@
 pecia is a Git-backed issue tracker for developers and AI coding agents.
 <!-- claims: product-category -->
 
-It stores defects, tasks, decisions, and milestones as records with typed
+Its work ledger stores defects, tasks, decisions, and milestones with typed
 dependencies, a local append-only log, and a snapshot you can review in Git.
 It gives a person and an agent the same answer to “what is next, what blocks
 it, and what happened to it?”
