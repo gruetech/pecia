@@ -98,39 +98,17 @@ for canonical_file in $canonical_paths dev/gates.json; do
   fi
 done
 
-# 2c) Review reports are custody records and land ALONE. Three times a
-#     git add -A swept a reviewer's report (plus probe debris, once) into an
-#     unrelated commit — a discipline that failed three times is not a
-#     discipline, so: a staged M2-review-*.md may not share a commit with
-#     anything else.
-staged_files="$(git diff --cached --name-only)"
-# The brief is excluded by exact name (pc-1ef4): it is the scope document
-# handed TO reviewers, authored in-repo — a working file, not a delivered
-# custody record. non_review is then derived by subtracting the actual
-# reports from the staged set rather than by re-matching the pattern, so the
-# brief staged BESIDE a report counts as a rider and the report still lands
-# alone.
-review_reports="$(echo "$staged_files" | grep -E '^research/M2-review-.*\.md$' | grep -Fxv 'research/M2-review-brief.md' || true)"
-if [ -n "$review_reports" ]; then
-  non_review="$(echo "$staged_files" | grep -Fxv -f <(printf '%s\n' "$review_reports") || true)"
-  if [ -n "$non_review" ]; then
-    echo "✋ pre-commit: review reports must land in a dedicated commit (custody records, as delivered)." >&2
-    echo "   Staged alongside: $(echo "$non_review" | head -3 | tr '\n' ' ')..." >&2
-    echo "   Commit the report alone first, then the rest. Bypass: git commit --no-verify" >&2
-    fail=1
-  fi
-fi
-
-# 2d) Commit-manifest gate — the general form of the add -A lesson. If
+# 2c) Commit-manifest gate — the general form of the add -A lesson. If
 #     .git/EXPECTED_COMMIT exists (one path or shell glob per line, plus a
 #     required `branch:` declaration), every staged path must match a line;
 #     the manifest is consumed on success. Manifest or not, the current
 #     branch and any worktree activity NOT in this commit are listed —
 #     informed, never surprised.
+staged_files="$(git diff --cached --name-only)"
 manifest="$(git rev-parse --git-dir)/EXPECTED_COMMIT"
 current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo DETACHED)"
 
-# 2d-i) Branch gate (pc-3303). Twice now an agent has committed onto another
+# 2c-i) Branch gate (pc-3303). Twice now an agent has committed onto another
 #       session's branch — once in axiomdb (pc-9378), once here — because the
 #       arrival check read `git log` and `git status` but never the branch
 #       name. pc-9378 was closed with a resolution to be careful, and that is
@@ -269,10 +247,10 @@ if ! python3 "$top/dev/gates.py" --precommit \
 fi
 
 # Consume the manifest only when the WHOLE hook passed. It used to be removed
-# inside 2d, which is before steps 3 and 4 run — so a commit refused by
+# inside 2c, which is before steps 3 and 4 run — so a commit refused by
 # claims-check or the ledger checker exited non-zero with the declaration
 # already deleted, and the retry had nothing to declare. Yesterday's fix for
-# the same bug guarded on `fail` at 2d, which only covered the gates ABOVE it.
+# the same bug guarded on `fail` at 2c, which only covered the gates ABOVE it.
 # Found 2026-08-04 by the gate's first tests.
 if [ "$fail" -eq 0 ] && [ -f "$manifest" ]; then
   rm -f "$manifest"

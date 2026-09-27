@@ -37,10 +37,11 @@ python3 pecia_cli.py check
 
 Commit `pecia_cli.py`, `.pecia/config.yaml`, `.pecia/work.jsonl`, and
 `.pecia/snapshot.head`. The log lives under Git's shared directory by default;
-`snapshot` writes its reviewable projection. After a new clone, `pecia sync`
-can use a published log, or `pecia migrate` can reconstruct one from committed
-snapshots. Read the [storage guide](docs/STORAGE.md) before relying on a new
-clone for a write.
+`snapshot` writes its reviewable projection. After a new clone, run `pecia
+sync` to fetch the published log before writing. If no log has been published,
+stop and ask the repository maintainer to publish it; a local reconstruction
+can diverge from a chain held elsewhere. Read the [storage guide](docs/STORAGE.md)
+before relying on a new clone for a write.
 With `PECIA_LOG_DIR` pinned, the projection sits beside its own log and
 nothing from that store appears in the repository snapshot.
 <!-- claims: stdlib-only, v2-storage -->
@@ -117,11 +118,11 @@ separate archive; they are not prerequisites for installing or using pecia.
 ## Develop
 
 ```sh
-python3 dev/test-runner.py -j 4
+uv run --python 3.12 --script dev/test-runner.py -j 4
 cargo build --release --locked
-PECIA_TEST_CLI="$PWD/target/release/pecia" python3 dev/test-runner.py -j 4
+PECIA_TEST_CLI="$PWD/target/release/pecia" uv run --python 3.12 --script dev/test-runner.py -j 4
 cargo test --release --locked
-python3 dev/claims-check.py
+uv run --python 3.12 --script dev/claims-check.py
 ```
 
 Development scripts use [uv](https://docs.astral.sh/uv/) for their declared

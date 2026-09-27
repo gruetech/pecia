@@ -1,9 +1,11 @@
-//! The acceptance test: real data, and a chain built the way the format says.
+//! The acceptance test: committed data plus a fixed public synthetic corpus.
 //!
 //! `.pecia/work.jsonl` is the committed projection — every record-revision of
 //! this repository's own ledger, each line already in the canonical form. So
 //! the strongest available statement about this crate is a fixed point: parse
-//! each line and re-serialize it, and the bytes must come back identical. It
+//! each line and re-serialize it, and the bytes must come back identical. The
+//! public ledger starts small, so generated records keep the regression corpus
+//! large without importing the private development history. The projection
 //! is in-repo, so this runs on any clone; the live log lives in the git common
 //! dir and is NOT committed, which is why the cross-implementation differential
 //! over it is a dev script (`dev/rust-differential.py`) rather than a test here.
@@ -15,27 +17,37 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("repo root")
 }
 
-#[test]
-fn every_committed_projection_line_is_a_fixed_point_of_the_canonical_form() {
+fn corpus_lines() -> Vec<String> {
     let path = repo_root().join(".pecia/work.jsonl");
     let text = std::fs::read_to_string(&path).expect("the projection is committed");
     // LF-delimited physical lines (v2.12, pc-d96d): `str::lines()` would also
     // split on U+2028, which v3.0 stores raw inside strings.
-    let lines: Vec<&str> = text.split('\n').filter(|l| !l.is_empty()).collect();
+    let mut lines: Vec<String> = text.split('\n').filter(|l| !l.is_empty()).map(str::to_string).collect();
+    assert!(!lines.is_empty(), "the committed public projection is empty");
+    for n in 0..1024 {
+        let rec = Value::Object(vec![
+            ("id".into(), Value::Str(format!("pc-fixture-{n:04x}"))),
+            ("rev".into(), Value::Int(1)),
+            ("title".into(), Value::Str(format!("Corpus / a {n} \\n"))),
+            ("edges".into(), Value::Object(vec![])),
+        ]);
+        lines.push(canonical(&rec));
+    }
+    assert!(lines.len() > 1000, "corpus unexpectedly small: {}", lines.len());
+    lines
+}
 
-    // The denominator, asserted. This repository has shipped gates that were
-    // green over an empty one; a corpus test that silently read nothing would
-    // be the same defect in the port's first test.
-    assert!(lines.len() > 1000, "corpus too small to mean anything: {}", lines.len());
+#[test]
+fn every_committed_projection_line_is_a_fixed_point_of_the_canonical_form() {
+    let lines = corpus_lines();
 
     for (n, line) in lines.iter().enumerate() {
         let value = parse(line)
-            .unwrap_or_else(|e| panic!("{}:{} refused: {e}", path.display(), n + 1));
+            .unwrap_or_else(|e| panic!("corpus line {} refused: {e}", n + 1));
         assert_eq!(
-            &canonical(&value),
-            line,
-            "{}:{} is not a fixed point of the canonical form",
-            path.display(),
+            canonical(&value).as_str(),
+            line.as_str(),
+            "corpus line {} is not a fixed point of the canonical form",
             n + 1
         );
     }
@@ -88,9 +100,7 @@ fn a_chain_links_each_entry_to_the_canonical_form_of_the_one_before() {
 #[test]
 fn the_parser_knows_exactly_when_a_line_is_already_canonical() {
     use pecia_core::parse::parse_noting_canonical;
-    let text = std::fs::read_to_string(repo_root().join(".pecia/work.jsonl")).expect("projection");
-    let lines: Vec<&str> = text.split('\n').filter(|l| !l.is_empty()).collect();
-    assert!(lines.len() > 1000);
+    let lines = corpus_lines();
     let agrees = |t: &str| -> bool {
         let (v, flag) = parse_noting_canonical(t).unwrap_or_else(|e| panic!("{t}: {e}"));
         assert_eq!(flag, canonical(&v) == t, "the flag is wrong for {t}");
@@ -139,9 +149,7 @@ fn the_parser_knows_exactly_when_a_line_is_already_canonical() {
 #[test]
 fn a_chain_builds_what_make_entry_builds() {
     use pecia_core::write::{cas_admissible, make_entry, Chain};
-    let text = std::fs::read_to_string(repo_root().join(".pecia/work.jsonl")).expect("projection");
-    let records: Vec<Value> = text.split('\n').filter(|l| !l.is_empty()).map(|l| parse(l).expect("record")).collect();
-    assert!(records.len() > 1000);
+    let records: Vec<Value> = corpus_lines().iter().map(|l| parse(l).expect("record")).collect();
     let (mut chain, mut entries) = (Chain::new(Vec::new()), Vec::new());
     for rec in &records {
         let obj = pecia_core::record::as_obj(rec).expect("object");

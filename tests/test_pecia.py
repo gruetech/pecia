@@ -7444,138 +7444,6 @@ class SecretScanGate(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
 
 
-class ReviewReportIsolationGate(unittest.TestCase):
-    """Pre-commit step 2c: a review report is a custody record and lands ALONE.
-    A staged research/M2-review-*.md may not share a commit with any other
-    staged path.
-
-    Origin: three separate `git add -A` sweeps swept a reviewer's report (plus
-    probe debris, once) into an unrelated commit, and one of those commits
-    falsified a ledger disposition. A discipline that failed three times is not
-    a discipline, so the rule moved into the hook.
-
-    These drive the real hook in a real git repo — a temp clone with
-    core.hooksPath set to the copied dev/hooks, a baseline commit made with
-    --no-verify, and then real `git commit` invocations asserted on returncode
-    and stderr. A gate tested by reading it is not tested.
-    """
-
-    NEEDED = ("claims.yaml", "dev/claims-check.py", "dev/hooks/pre-commit",
-              "pecia_cli.py") + GATE_SURFACE
-    REPORT = "research/M2-review-7-copilot.md"
-
-    def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory(dir=ROOT)
-        self.addCleanup(self.tempdir.cleanup)
-        self.repo = Path(self.tempdir.name)
-        for rel in self.NEEDED:
-            dest = self.repo / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(ROOT / rel, dest)
-            dest.chmod(0o755)
-        self.git("init", "-q", "-b", "main", ".")
-        self.git("config", "user.email", "test@example.invalid")
-        self.git("config", "user.name", "test")
-        self.git("config", "core.hooksPath", "dev/hooks")
-        self.git("add", "-A")
-        self.git("commit", "-q", "--no-verify", "-m", "baseline")
-
-    def git(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["git", *args], cwd=str(self.repo), text=True,
-                              capture_output=True, check=False)
-
-    def write(self, name: str, text: str = "content\n") -> str:
-        path = self.repo / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-        return name
-
-    def stage(self, name: str, text: str = "content\n") -> str:
-        self.write(name, text)
-        self.git("add", name)
-        return name
-
-    def commit(self) -> subprocess.CompletedProcess[str]:
-        return self.git("commit", "-m", "test commit")
-
-    def test_kill_a_review_report_staged_beside_another_file_is_refused(self) -> None:
-        # The add -A sweep, exactly: the report rides along with unrelated work.
-        # The rider is a file no other gate has an opinion about, so a refusal
-        # here can only have come from 2c.
-        self.stage(self.REPORT, "# Review 7\n")
-        self.stage("notes.md")
-        result = self.commit()
-        self.assertNotEqual(result.returncode, 0,
-                            msg="a report sharing a commit must be refused")
-        self.assertIn("dedicated commit", result.stderr)
-        self.assertIn("notes.md", result.stderr,
-                      msg="the refusal must name what the report was swept in with")
-
-    def test_kill_a_staged_deletion_beside_a_report_is_refused(self) -> None:
-        # `git add -A` stages removals too; the sweep that falsified a ledger
-        # disposition is not only about added files.
-        self.stage("doomed.txt")
-        self.git("commit", "-q", "--no-verify", "-m", "add doomed")
-        self.git("rm", "-q", "doomed.txt")
-        self.stage(self.REPORT, "# Review 7\n")
-        result = self.commit()
-        self.assertNotEqual(result.returncode, 0,
-                            msg="a staged deletion is a staged path like any other")
-        self.assertIn("dedicated commit", result.stderr)
-
-    def test_control_the_same_report_staged_alone_commits(self) -> None:
-        self.stage(self.REPORT, "# Review 7\n")
-        result = self.commit()
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-
-    def test_control_two_ordinary_files_together_commit(self) -> None:
-        self.stage("notes.md")
-        self.stage("spec/extra.md")
-        result = self.commit()
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-
-    def test_control_a_non_matching_research_file_does_not_trigger_the_gate(self) -> None:
-        # research/M3-*.md is ordinary prose, not a custody record.
-        self.stage("research/M3-axiom-friction.md")
-        self.stage("notes.md")
-        result = self.commit()
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-
-    def test_control_unstaged_worktree_debris_does_not_trigger_the_gate(self) -> None:
-        # Staged-state discipline: the gate reads the index, not the worktree.
-        # Probe debris left lying around is reported as activity, never gated.
-        self.stage(self.REPORT, "# Review 7\n")
-        self.write("probe-debris.txt")
-        result = self.commit()
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertIn("probe-debris.txt", result.stderr,
-                      msg="unstaged debris is announced, not gated")
-
-    def test_the_reviewer_brief_is_not_gated_as_a_report(self) -> None:
-        # INVERTED 2026-09-07 when pc-1ef4 was fixed (per its own instruction:
-        # inverted, not deleted). The brief is the scope document handed TO
-        # reviewers — an ordinary working file, excluded from the pattern by
-        # exact name — so it commits beside other work like any other file.
-        self.stage("research/M2-review-brief.md", "# Brief\n")
-        self.stage("notes.md")
-        result = self.commit()
-        self.assertEqual(result.returncode, 0,
-                         msg="pc-1ef4 fixed: the brief is not a custody record; "
-                             + result.stderr)
-
-    def test_kill_a_report_staged_beside_the_brief_is_still_refused(self) -> None:
-        # The exclusion must not weaken the gate: to a delivered REPORT, the
-        # brief is a rider like any other staged file.
-        self.stage(self.REPORT, "# Review 7\n")
-        self.stage("research/M2-review-brief.md", "# Brief\n")
-        result = self.commit()
-        self.assertNotEqual(result.returncode, 0,
-                            msg="the report must still land alone")
-        self.assertIn("dedicated commit", result.stderr)
-        self.assertIn("M2-review-brief.md", result.stderr,
-                      msg="the refusal must name the brief as the rider")
-
-
 class SecretFilenameGate(unittest.TestCase):
     """Step 1 of dev/hooks/pre-commit: the gate that refuses a commit when a
     staged addition or modification has a secret-bearing FILENAME — dotenv
@@ -7866,8 +7734,8 @@ class CommitManifestPathGate(unittest.TestCase):
     def test_kill_an_undeclared_staged_file_is_refused_and_named(self) -> None:
         # The add -A scenario: the author declared the report, the sweep took
         # the debris too.
-        self.stage("research/M2-review-x.md", "probe-debris.txt")
-        self.declare("research/M2-review-x.md")
+        self.stage("declared.txt", "probe-debris.txt")
+        self.declare("declared.txt")
         result = self.commit()
         self.assertNotEqual(result.returncode, 0,
                             msg="an undeclared staged path must refuse the commit")
@@ -7918,11 +7786,11 @@ class CommitManifestPathGate(unittest.TestCase):
     # --- controls --------------------------------------------------------
 
     def test_control_a_fully_declared_commit_is_allowed(self) -> None:
-        self.stage("research/M2-review-x.md")
-        self.declare("research/M2-review-x.md")
+        self.stage("declared.txt")
+        self.declare("declared.txt")
         result = self.commit()
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertIn("research/M2-review-x.md", self.head_files())
+        self.assertIn("declared.txt", self.head_files())
 
     def test_control_several_declared_paths_all_match(self) -> None:
         self.stage("a.txt", "nested/b.txt", "nested/deeper/c.txt")

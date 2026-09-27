@@ -4135,8 +4135,8 @@ served by metrics, never by text"; its "the audit sample selects, it does
 not quote"; its resolver rule, where the reason stays a closed vocabulary
 and the stderr line is added; v1.13's rule that a token naming no record is
 counted, never quoted; and `pc-2706`, `pc-80d7` and `pc-72c8`.
-`research/prose-containment-design.md` stands as the record of why they
-were adopted.
+The design record explaining why they were adopted remains in the separate
+development archive.
 
 <a id="ordinary-writes-leave-the-projection-to-snapshot-the-log-carries-a-high-"></a>
 

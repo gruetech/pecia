@@ -1,7 +1,7 @@
 # pecia format — v1
 
 **Status:** asserted spec (2026-07-25). Supersedes `format-v0.md`. Reconciled
-from the Q1/Q2 conspectuses via `research/reconciliation-2026-07-25.md`.
+from Q1/Q2 conspectuses in the separate development archive.
 **Outstanding before this may be called validated:** off-Claude replication of
 the central finding (monoculture caveat), primary-source verification of the
 reconciliation's starred figures, and the M2 checker enforcing every invariant
@@ -228,7 +228,7 @@ Each ships with a demonstrated kill at M2, or its claim stays aspirational.
 
 ## v1.1 amendments (2026-07-29 — driven by the M2 adversarial review)
 
-The review (`research/M2-review-copilot.md`) surfaced ambiguities the v1 text
+An adversarial review retained in the development archive surfaced ambiguities the v1 text
 left underdetermined. Operationalizations, now binding:
 
 - **E002 / E010 split.** The v1 table defined both as duplicate (`id`,`rev`)
@@ -601,8 +601,8 @@ first on main, considered that exact argument, and rejected it: a version that
 moves only when someone notices certifies nothing. Renumbered and conformed on
 rebase, 2026-08-06.)
 
-Design and the off-vendor challenge that corrected it:
-`research/prose-containment-design.md`, `research/pc-cdb8-codex-1-design.md`.
+The design and off-vendor challenge that corrected it are retained in the
+separate development archive.
 
 ## v1.11 amendments (2026-08-07 — how a cap is sized, defect pc-88c6)
 

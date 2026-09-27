@@ -268,7 +268,7 @@ def safe_text(value: Any, cap: int = 0) -> str:
       - Cc/Cf/Cs code points (ANSI escapes, bidi overrides, zero-width marks,
         lone surrogates) — text that hides, reorders, drives the reader's
         terminal, or cannot be encoded at all. Cs is here because a lone
-        surrogate is a DENIAL channel: `"title": "x\ud800"` is legal JSON that
+        surrogate is a DENIAL channel: `"title": "x\\ud800"` is legal JSON that
         no UTF-8 stream can carry, and it took `gantt` and `graph --format
         mermaid` to exit 2 from the same imported-record path this defect is
         about (`board` already survived, via its own lossy fallback). Found

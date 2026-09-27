@@ -14,22 +14,23 @@ claims:
   claim: The Python CLI passes the retained public behavioral suite at the
     source candidate.
   tier: tested
-  evidence: python3 dev/test-runner.py -j 4
+  evidence: uv run --python 3.12 --script dev/test-runner.py -j 4
   verified: '2026-09-26'
   kill: The suite includes E-code violation cases and a null scramble arm.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
+  notes: 'Final curated public candidate: 1,252 discovered, 11 skipped, green on
+    Python 3.12. Reverify at the release commit.'
 - id: rust-parity
   claim: The Rust CLI is driven by the same public behavioral suite as the
     Python CLI, with documented implementation-specific skips.
   tier: tested
-  evidence: PECIA_TEST_CLI=target/release/pecia python3 dev/test-runner.py -j
-    4
+  evidence: PECIA_TEST_CLI=target/release/pecia uv run --python 3.12 --script
+    dev/test-runner.py -j 4
   verified: '2026-09-26'
   kill: Shared subprocess assertions exercise both CLIs; Rust internal tests
     cover separate implementation arms.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
+  notes: 'Final curated public candidate: 1,252 discovered, 89 skipped, green against
+    the built Rust CLI. Rust internal tests passed separately. Reverify at the release
+    commit.'
 - id: v2-storage
   claim: The CLI uses a local append-only log, published through
     refs/pecia/log, with compare-and-swap checks and a generated reviewable
@@ -98,8 +99,10 @@ claims:
   evidence: python3 -m unittest tests.test_pecia.TheCliIsStdlibOnly
   verified: '2026-09-26'
   kill: The test checks imports and the isolated one-file invocation.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
+  notes: One-file invocation passed in scratch adopter repos on Python 3.12. A
+    direct Python 3.14.7 import and ledger check also passed after escaping a
+    lone surrogate in a source docstring; older supported interpreters need
+    public CI coverage.
 - id: format-spec
   claim: The v2 format is documented and implemented; a clean composed-scope
     off-lineage review of a frozen public release remains open.
@@ -133,13 +136,14 @@ claims:
 - id: self-hosting
   claim: The public repository uses pecia to track its own forward-looking
     work from its first public commit.
-  tier: asserted
-  evidence: ./pecia_cli.py check
+  tier: tested
+  evidence: python3 pecia_cli.py check && python3 pecia_cli.py next
   verified: '2026-09-26'
-  kill: The initial public commit and fresh-clone replay are still being
-    prepared.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
+  kill: 'A fresh clone initially reported D009: no local timeline. Publishing the
+    chain to a temporary local bare remote and running sync hydrated the same six-entry
+    head before doctor and check passed.'
+  notes: Initial public candidate commit 223ec84 (2026-09-26). This is a local
+    first-clone test, not a public GitHub release or an outsider trial.
 - id: adapter-affordance
   claim: External adapters can produce the documented record format; bundled
     adapter examples are outside the core.
@@ -225,15 +229,6 @@ claims:
   evidence: python3 -m unittest tests.test_pecia.CanonicalDeletionGate
   verified: '2026-09-26'
   kill: Red cases stage deletion while keeping the worktree file.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
-- id: hook-review-isolation
-  claim: The repository hook isolates review report commits when such reports
-    are staged.
-  tier: tested
-  evidence: python3 -m unittest tests.test_pecia.ReviewReportIsolationGate
-  verified: '2026-09-26'
-  kill: Red cases stage a report beside unrelated files.
   notes: Public tree at the 2026-09-26 source candidate; reverify at the
     release commit.
 - id: hook-commit-manifest

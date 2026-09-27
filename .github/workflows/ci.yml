@@ -89,15 +89,26 @@ jobs:
           fi
       - name: work ledger structural check (E001-E009, E011-E017)
         run: ./pecia_cli.py check
-      - name: test suite (kill matrix, null arm, trap + review fixtures)
-        run: uv run python -m unittest discover -s tests -v
+      - name: public behavioral suite (Python 3.12)
+        run: uv run --python 3.12 python -m unittest discover -s tests -v
       # The durability arms observe the CLI's fsyncs with strace, and skip
       # where strace is missing; on this runner they must RUN, or the suite's
       # green says nothing about durability (pc-26a08d9c5d46).
       - name: the durability arms ran here
         run: |
-          out=$(uv run python -m unittest -k issues_the_syncs -k issues_no_sync tests.test_pecia.WritesAreDurable 2>&1); echo "$out"
+          out=$(uv run --python 3.12 python -m unittest -k issues_the_syncs -k issues_no_sync tests.test_pecia.WritesAreDurable 2>&1); echo "$out"
           echo "$out" | grep -q "^Ran 2 tests" && echo "$out" | grep -qx "OK"
+
+  python-versions:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: one-file CLI import and ledger check
+        run: uv run --python "${{ matrix.python-version }}" --script pecia_cli.py check --ledger .pecia/work.jsonl --config .pecia/config.yaml
 
   formal:
     runs-on: ubuntu-latest

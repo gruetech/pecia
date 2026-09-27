@@ -10,9 +10,9 @@ implementations or state why one is deliberately different. Run the shared
 suite against Python and Rust, then Rust's internal tests:
 
 ```sh
-python3 dev/test-runner.py -j 4
+uv run --python 3.12 --script dev/test-runner.py -j 4
 cargo build --release --locked
-PECIA_TEST_CLI="$PWD/target/release/pecia" python3 dev/test-runner.py -j 4
+PECIA_TEST_CLI="$PWD/target/release/pecia" uv run --python 3.12 --script dev/test-runner.py -j 4
 cargo test --release --locked
 ```
 

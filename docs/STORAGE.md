@@ -12,12 +12,15 @@ to each clone; files in the repository cannot make a hook active by
 themselves. Install the adopter hook as in the README, or run
 `pecia doctor --fix` where that command's suggested changes are wanted.
 
-Before the first write in a new clone, hydrate the timeline. If the remote
-publishes `refs/pecia/log`, fetch it and run `pecia sync`. If the published
-ref is unavailable, `pecia migrate` can reconstruct a timeline from the
-committed snapshots. Read each command's output and run `pecia check`
-afterward; an exit-0 check says well-formed, not true. Keep the original
-development archive's log distinct from the new public repository's log.
+Before the first write in a new clone, run `pecia sync` to fetch the
+published `refs/pecia/log` timeline. A normal Git clone does not fetch that
+ref. If it is absent on a remote-backed repository, stop and ask its
+maintainer to publish it; `doctor` reports D009 for this case. `migrate`
+can reconstruct a local chain from committed snapshots, but using it as an
+automatic fallback could diverge from a chain another clone has already
+published. After hydration, run `pecia check`; an exit-0 check says
+well-formed, not true. Keep the original development archive's log distinct
+from the new public repository's log.
 
 These are the default-store paths. `PECIA_LOG_DIR` explicitly pins an
 alternate store; see the format specification for its scope and review

@@ -365,24 +365,6 @@
       }
     },
     {
-      "id": "hook-review-isolation",
-      "why": "A staged review report (research/M2-review-*.md, brief excluded per pc-1ef4) lands alone, never beside another staged file.",
-      "inline": true,
-      "hook": "dev/hooks/pre-commit",
-      "markers": [
-        "review reports must land in a dedicated commit"
-      ],
-      "precommit": true,
-      "redcase": "tests.test_pecia.ReviewReportIsolationGate.test_kill_a_review_report_staged_beside_another_file_is_refused",
-      "claim": "hook-review-isolation",
-      "redcase_mutation": {
-        "path": "dev/hooks/pre-commit",
-        "from": "if [ -n \"$review_reports\" ]; then",
-        "to": "if false; then",
-        "why": "the block the lane disabled: the isolation refusal becomes unreachable code with its marker still present"
-      }
-    },
-    {
       "id": "hook-branch",
       "why": "The manifest must declare the intended branch and it must match HEAD (pc-3303).",
       "inline": true,

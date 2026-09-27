@@ -3,8 +3,9 @@
 //! `write_gate_local` computes a write's new errors from what one appended
 //! revision can change; `write_gate` diffs the whole checker before and
 //! after. They must give the same findings in the same order for every write
-//! the local one is used for. This drives both over the committed corpus —
-//! and over the corpus damaged the ways the graph checks care about, so the
+//! the local one is used for. This drives both over the public ledger plus a
+//! fixed synthetic corpus — and over that corpus damaged the ways the graph
+//! checks care about, so the
 //! "before" side is not empty — with thousands of candidates bent at random
 //! in the ways a write can bend a record.
 
@@ -20,7 +21,28 @@ use std::path::PathBuf;
 fn corpus() -> Vec<Value> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("root");
     let text = std::fs::read_to_string(root.join(".pecia/work.jsonl")).expect("projection");
-    text.split('\n').filter(|l| !l.is_empty()).map(|l| parse(l).expect("record")).collect()
+    let mut records: Vec<Value> = text.split('\n').filter(|l| !l.is_empty()).map(|l| parse(l).expect("record")).collect();
+    assert!(!records.is_empty(), "the public projection is committed");
+    for n in 0..64 {
+        let done = n % 5 == 0;
+        records.push(Value::Object(vec![
+            ("id".into(), Value::Str(format!("pc-gate-{n:04x}"))),
+            ("rev".into(), Value::Int(1)),
+            ("type".into(), Value::Str(if n % 7 == 0 { "decision" } else { "task" }.into())),
+            ("title".into(), Value::Str(format!("Gate case {n}"))),
+            ("status".into(), Value::Str(if done { "done" } else { "open" }.into())),
+            ("priority".into(), Value::Int(2)),
+            ("created".into(), Value::Str("2026-09-25".into())),
+            ("updated".into(), Value::Str("2026-09-25".into())),
+            ("edges".into(), Value::Object(vec![("blocks".into(), Value::Array(vec![])), ("retires".into(), Value::Array(vec![]))])),
+            ("disposition".into(), if done { Value::Str("fixture completed".into()) } else { Value::Null }),
+            ("evidence".into(), Value::Str("unknown".into())),
+            ("owner".into(), Value::Str("test:fixture".into())),
+            ("labels".into(), Value::Array(vec![])),
+            ("body".into(), Value::Str(String::new())),
+        ]));
+    }
+    records
 }
 
 /// A small deterministic generator: the test is the same every run.
