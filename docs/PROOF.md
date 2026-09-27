@@ -34,6 +34,17 @@ removing the corresponding test modules and classes, the suite above passed.
 The public release SHA still needs its own CI run and an outsider first-use
 trial before a hard-launch claim is warranted.
 
+## Scale regression
+
+On 2026-09-27, the release-profile Rust CLI locally completed `check`,
+`next --limit 10`, and `show` on a generated timeline of 400,000 independent
+open tasks, one revision each. The generator checks the record count and query
+results. The x86-64 CI workflow now runs the same script, but its first
+public-host result is still pending. This workload exercises a large issue
+count; it does not establish performance for a dense dependency graph,
+repeated revisions, or writes at that size.
+<!-- claims: rust-scale-local -->
+
 ## Reproduce on this tree
 
 ```sh
@@ -42,6 +53,7 @@ cargo build --release --locked
 PECIA_TEST_CLI="$PWD/target/release/pecia" uv run --python 3.12 --script dev/test-runner.py -j 4
 cargo test --release --locked
 uv run --python 3.12 --script dev/claims-check.py
+uv run --python 3.12 python dev/scale-regression.py --cli target/release/pecia --count 400000
 ```
 
 The suite may need `uv` for development scripts and dependencies. The
@@ -54,4 +66,5 @@ review remains asserted pending a clean pass over a frozen public release.
 The dogfooding report is also asserted in this public tree: one real sibling
 adoption, two one-shot imports, and pecia's own ledger are different
 observations. The full record remains in the development archive. No benchmark
-number is a release claim yet.
+result is a general performance guarantee; the 400,000-task observation is
+bounded to its generated workload and local host until public-host CI runs.

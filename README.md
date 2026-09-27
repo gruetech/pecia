@@ -16,19 +16,14 @@ skips Python-specific arms; Rust has its own internal tests. See
 independent evidence of correctness.
 <!-- claims: reference-implementation, rust-parity -->
 
-## Give this to a coding agent
+## Install with a coding agent
 
-Open the Git repository that should own the ledger, then paste this into your
-coding agent:
+> Install the Python or Rust version of pecia from
+> https://github.com/gruetech/pecia in this repo.
 
-```text
-Set up pecia in the current Git repository using https://github.com/gruetech/pecia. First identify the repository root and branch, and inspect any existing .pecia files and pre-commit hook. Read pecia's README and docs/STORAGE.md. Keep the pecia source checkout outside this repository. Prefer the Python CLI if Python 3.11+ is available; use Rust if I request it. If neither toolchain is available, stop and tell me.
-
-For an existing pecia ledger, do not run init. Run doctor, sync, and check before writing; if the published timeline is missing or verification fails, stop and report the finding. For a new ledger, install one CLI, run init, and install the adopter hook. If another hook is already configured, stop and ask before changing it. Run doctor and check. Record the chosen executable and daily workflow in this repository's AGENTS.md without removing existing instructions. Do not invent a sample task, publish, or migrate merely to make setup look complete. Report the files changed, the commands and results, whether the gate is active, and anything that still needs a decision. A clean check establishes structural consistency, not the truth of any record.
-```
-
-The instructions below give the agent the exact installation paths and the
-fresh-clone recovery boundary. You can also follow them yourself.
+Use Rust if you do not use Python or expect a large issue history. Manual
+installation and fresh-clone recovery are below.
+<!-- claims: rust-scale-local -->
 
 ## Use it in an existing Git repository
 

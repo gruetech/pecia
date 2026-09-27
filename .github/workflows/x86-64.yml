@@ -60,6 +60,9 @@ jobs:
         env:
           PECIA_TEST_CLI: ${{ github.workspace }}/target/release/pecia
         run: uv run dev/test-runner.py -j 4
+      - name: 400k-issue Rust scale regression
+        timeout-minutes: 12
+        run: uv run --python 3.12 python dev/scale-regression.py --cli target/release/pecia --count 400000
       # The durability arms observe the binary's fsyncs with strace, and skip
       # where strace is missing; here they must RUN against the Rust binary,
       # or the suite's green says nothing about its durability (pc-26a08d9c5d46).
