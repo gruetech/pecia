@@ -123,6 +123,10 @@ claim is true.
 The installed command and hook are local to each clone. Keep this note with
 the adopter repository so future agents have the same starting point.
 
+For repeated agent use, [the pecia skill](skills/pecia/SKILL.md) describes
+this workflow; reliable agent use has not yet been shown.
+<!-- claims: agent-skill -->
+
 ## Daily commands
 
 | Command | Purpose |

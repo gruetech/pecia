@@ -290,3 +290,15 @@ claims:
     1.91 s, show 0.06 s. These are one-host observations, not comparative or CI
     timing guarantees. The x86-64 CI step is added but has not run on the public
     host.'
+- id: agent-skill
+  claim: The public repository includes a pecia SKILL.md for agent setup,
+    fresh-clone recovery, and routine issue work; its effectiveness across
+    agent products has not been measured.
+  tier: asserted
+  evidence: skills/pecia/SKILL.md; skill-creator quick_validate.py
+  verified: '2026-09-27'
+  kill: The syntax validator accepts the skill, but no independent first-use
+    trial has tested agent decisions from it.
+  notes: The skill is a portable file in the source tree, not an installed
+    skill in an adopter repository. Its instructions defer commands and
+    detailed recovery steps to the current source README and storage guide.
