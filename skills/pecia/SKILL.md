@@ -12,10 +12,10 @@ pecia owns its issue history; keep the source checkout separate from it.
 - Inspect the target repository for existing `.pecia` files and a configured
   commit hook before changing either. Integrate an existing hook rather than
   replacing it.
-- Choose the Python CLI for a Python 3.11+ environment. Choose the Rust CLI
-  when Python is not used or a large issue history is expected. Both use the
-  same storage format. The Rust CLI also provides `pecia mcp` over stdio when
-  the agent supports MCP tools.
+- Choose the Rust CLI by default. It provides `pecia mcp` over stdio when the
+  agent supports MCP tools, and its large-history path has a local scale
+  regression. Use the one-file Python CLI when that fits the repository
+  better. Both use the same storage format.
 - In a fresh clone, run `doctor`, `sync`, and `check` before writing. If the
   published timeline is missing, report it; do not run `init` or `migrate`
   over an existing projection as an automatic recovery step. Initialize only

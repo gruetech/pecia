@@ -18,18 +18,19 @@ independent evidence of correctness.
 
 ## Install with a coding agent
 
-> Install the Python or Rust version of pecia from
-> https://github.com/gruetech/pecia in this repo.
+> Install pecia's Rust CLI from https://github.com/gruetech/pecia in this
+> repo. Use its MCP server if your agent supports MCP.
 
-Use Rust if you do not use Python or expect a large issue history. Manual
-installation and fresh-clone recovery are below.
-<!-- claims: rust-scale-local -->
+Rust is the recommended version: it includes the MCP server and completed a
+local scale run on 400,000 generated issues. The one-file Python CLI remains
+available. Manual installation and fresh-clone recovery are below.
+<!-- claims: mcp-server, rust-scale-local, stdlib-only -->
 
 ## Use it in an existing Git repository
 
-Choose one implementation. Both write the same ledger format. A repository
-needs only one executable; development dependencies are not adopter
-dependencies.
+Start with Rust unless the one-file Python CLI better fits your environment.
+Both write the same ledger format. A repository needs only one executable;
+development dependencies are not adopter dependencies.
 <!-- claims: stdlib-only, rust-parity -->
 
 Clone pecia outside the repository that will use it. In the commands below,
@@ -40,7 +41,23 @@ paths:
 git clone https://github.com/gruetech/pecia /path/to/pecia-source
 ```
 
-### Python: copy one file
+### Rust: recommended
+
+Rust and Cargo are needed to build:
+
+```sh
+cargo install --path /path/to/pecia-source/crates/pecia-cli --locked
+cd /path/to/your-repo
+pecia init
+pecia check
+```
+
+`pecia mcp` exposes the Rust CLI over stdio for agents with MCP support. It
+serves the current repository and does not make the ledger true by returning
+a green result.
+<!-- claims: rust-parity, mcp-server -->
+
+### Python: one file
 
 Python 3.11 or newer is required. Copy `pecia_cli.py` into the Git repository
 where you want the ledger:
@@ -52,32 +69,18 @@ python3 pecia_cli.py init
 python3 pecia_cli.py check
 ```
 
-Commit `pecia_cli.py`, `.pecia/config.yaml`, `.pecia/work.jsonl`, and
-`.pecia/snapshot.head`. The log lives under Git's shared directory by default;
-`snapshot` writes its reviewable projection. After a new clone, run `pecia
-sync` to fetch the published log before writing. If no log has been published,
-stop and ask the repository maintainer to publish it; a local reconstruction
-can diverge from a chain held elsewhere. Read the [storage guide](docs/STORAGE.md)
-before relying on a new clone for a write.
+### After installation
+
+Commit `.pecia/config.yaml`, `.pecia/work.jsonl`, and `.pecia/snapshot.head`;
+also commit `pecia_cli.py` if you chose Python. The log lives under Git's
+shared directory by default; `snapshot` writes its reviewable projection.
+After a new clone, run `sync` to fetch the published log before writing. If
+no log has been published, stop and ask the repository maintainer to publish
+it; a local reconstruction can diverge from a chain held elsewhere. Read the
+[storage guide](docs/STORAGE.md) before relying on a new clone for a write.
 With `PECIA_LOG_DIR` pinned, the projection sits beside its own log and
 nothing from that store appears in the repository snapshot.
 <!-- claims: stdlib-only, v2-storage -->
-
-### Rust: install the CLI
-
-Rust and Cargo are needed to build:
-
-```sh
-cargo install --path /path/to/pecia-source/crates/pecia-cli --locked
-cd /path/to/your-repo
-pecia init
-pecia check
-```
-
-The installed `pecia` binary can replace `python3 pecia_cli.py` in the other
-examples. `pecia mcp` exposes the Rust CLI over stdio; it serves the current
-repository and does not make the ledger true by returning a green result.
-<!-- claims: rust-parity, mcp-server -->
 
 ### Turn on the adopter commit gate
 
@@ -110,10 +113,12 @@ its other instructions. Record which executable you installed. This is the
 workflow that section should convey:
 
 ```md
-From the repository root, run pecia with `python3 pecia_cli.py` (or `pecia`
-if the Rust CLI is installed). In each fresh clone, run `doctor`, `sync`, and
-`check` before writing. If the published timeline is missing, stop and ask;
-do not use `init` or `migrate` to reconstruct it automatically. Read live
+From the repository root, run pecia with the installed Rust `pecia` command
+(or `python3 pecia_cli.py` if using Python). The Rust CLI also serves
+`pecia mcp` over stdio for agents with MCP support. In each fresh clone, run
+`doctor`, `sync`, and `check` before writing. If the published timeline is
+missing, stop and ask; do not use `init` or `migrate` to reconstruct it
+automatically. Read live
 work with `next` and `show <id>`. After `add`, `edit`, or `close`, run
 `snapshot` and commit both `.pecia/work.jsonl` and `.pecia/snapshot.head`.
 `check` reports structural consistency; it does not establish that a record's
