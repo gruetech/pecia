@@ -1,0 +1,17 @@
+[package]
+name = "pecia-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "pecia as an MCP server: stdio JSON-RPC, one server per repository, every command a tool."
+
+[lints]
+workspace = true
+
+[dependencies]
+pecia-commands = { path = "../pecia-commands" }
+pecia-core = { path = "../pecia-core" }
+# The protocol layer only: parsing requests and writing JSON-RPC frames.
+# Never the ledger's canonical form, which pecia-core owns (design/rust-port.md §4).
+serde_json = "1"

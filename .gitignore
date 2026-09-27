@@ -1,0 +1,11 @@
+/target/
+spec/.alloy/
+*.class
+__pycache__/
+*.pyc
+.pecia/.lock
+/tmp*/
+*.sw[a-p]
+*~
+.#*
+\#*\#

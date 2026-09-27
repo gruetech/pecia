@@ -1,0 +1,423 @@
+{
+  "$comment": [
+    "THE GATE REGISTRY (pc-01db). This file is not a description of the gates —",
+    "it is what runs them. dev/gates.py is the only caller, dev/hooks/pre-commit",
+    "calls dev/gates.py, and the scheduled agent calls it too. An entry that is",
+    "wrong therefore fails loudly instead of lying quietly, which is the whole",
+    "point: BP23 in the practice catalog names a guard registry maintained by",
+    "the people who installed the guards as erring toward CLAIMING enforcement,",
+    "and the audit of one such registry corrected two rows that read as enforced",
+    "when the hook had never been enabled in any clone. A registry that only",
+    "describes reproduces that fault. This one executes.",
+    "",
+    "ADDING OR REMOVING A GATE REQUIRES EDITING THIS FILE, and that requirement",
+    "is enforced, not requested: `dev/gates.py --audit` scans the discovery",
+    "globs below and refuses when a gate-shaped file on disk has no entry here,",
+    "or when an entry names a file that does not exist. The audit runs inside",
+    "pre-commit, so the drift is caught at the commit that introduces it. This",
+    "is GP28's coverage axis (does a check exist AND run in the runner) applied",
+    "to the gate set itself, which is VP21.",
+    "",
+    "`redcase` is the VP21 denominator: the test that proves this gate can turn",
+    "RED. null means unproven, and `--audit` reports the proportion rather than",
+    "rounding it up. A gate with no red-case arm is not known to be a gate.",
+    "",
+    "INLINE GATES (pc-fff0, v2.7). Seven enforcement blocks live inside",
+    "dev/hooks/pre-commit itself, outside the discovery globs, and this",
+    "file's promise - adding or removing a gate requires editing it - was",
+    "silently false for them: deleting an inline block changed neither the",
+    "audit nor any commit verdict. Each is now registered with `inline`,",
+    "the `hook` path, and one `marker` per refusal line it prints. The",
+    "audit reads the hook from the INDEX and refuses in both directions: a",
+    "registered marker gone from the hook is a removed gate; a refusal",
+    "line no marker covers is an added, unregistered one.",
+    "",
+    "THE CLAIM JOIN (pc-fc37, round-7 lane D-F2). README says the state of",
+    "every project claim lives in claims.yaml \"and nowhere else\", and the",
+    "editor-debris commit gate had its state, red case and tests only here",
+    "and in tests/ - no entry there, and no checker compared the two",
+    "registries, so both audited clean over the split. Six of the seven",
+    "inline hook gates already carried an entry, which settles the scope",
+    "question: inline gates are IN. So every entry names in `claim` the",
+    "claims.yaml id it enforces, or states in `claim_why_not` why it",
+    "enforces none, and `--audit` refuses a name that ledger does not carry",
+    "- reading the ledger from the INDEX under --index, like every other",
+    "input. The reverse direction was already covered: a deleted gate file",
+    "is a DANGLING ENTRY, a deleted entry an UNREGISTERED GATE."
+  ],
+  "discovery": {
+    "globs": [
+      "dev/*-check.py",
+      "dev/*-gate.sh"
+    ],
+    "why": [
+      "A gate is named for what it is. The naming convention is what makes",
+      "discovery possible at all — dev/report.py, dev/claims-edit.py and",
+      "dev/claims-ref.py are tools, not gates, and do not match. A new gate",
+      "that dodges the convention to dodge the audit is a deliberate act and",
+      "will read as one in review."
+    ]
+  },
+  "gates": [
+    {
+      "id": "claims-check",
+      "why": "Is claims.yaml well-formed, and does each tier obey the honesty rules it implies?",
+      "argv": [
+        "{top}/dev/claims-check.py"
+      ],
+      "staged_argv": [
+        "{top}/dev/claims-check.py",
+        "{staged}/claims.yaml"
+      ],
+      "inputs": [
+        "claims.yaml"
+      ],
+      "triggers": null,
+      "precommit": true,
+      "on_fail": [
+        "Run: git show :claims.yaml | dev/claims-check.py /dev/stdin"
+      ],
+      "redcase": "tests.test_gates.RedCase.test_claims_check_fires",
+      "claim": "claims-check-enforced"
+    },
+    {
+      "id": "ledger-check",
+      "why": "Is the STAGED ledger structurally sound (E001-E009, E011-E017) against the STAGED config?",
+      "argv": [
+        "{top}/pecia_cli.py",
+        "check"
+      ],
+      "staged_argv": [
+        "{top}/pecia_cli.py",
+        "check",
+        "--ledger",
+        "{staged}/.pecia/work.jsonl",
+        "--config",
+        "{staged}/.pecia/config.yaml"
+      ],
+      "inputs": [
+        ".pecia/work.jsonl",
+        ".pecia/config.yaml"
+      ],
+      "triggers": null,
+      "require_cached": ".pecia/work.jsonl",
+      "precommit": true,
+      "on_fail": [
+        "Run: ./pecia_cli.py check --ledger <(git show :.pecia/work.jsonl) --config <(git show :.pecia/config.yaml)",
+        "Exit 0 means WELL-FORMED, never true (spec/format-v1.md rule 1)."
+      ],
+      "redcase": "tests.test_gates.RedCase.test_ledger_check_fires",
+      "claim": "write-gate"
+    },
+    {
+      "id": "vocab-check",
+      "why": "Is an E-code or spec amendment level allocated twice, or the generated registry stale?",
+      "argv": [
+        "{top}/dev/vocab-check.py"
+      ],
+      "staged_argv": [
+        "{top}/dev/vocab-check.py",
+        "--spec",
+        "{staged}/spec/format-v1.md",
+        "--spec",
+        "{staged}/spec/format-v2.md",
+        "--source",
+        "{staged}/pecia_cli.py",
+        "--registry",
+        "{staged}/spec/vocabulary.json"
+      ],
+      "inputs": [
+        "spec/format-v1.md",
+        "spec/format-v2.md",
+        "spec/vocabulary.json",
+        "pecia_cli.py"
+      ],
+      "triggers": [
+        "spec/format-v1.md",
+        "spec/format-v2.md",
+        "spec/vocabulary.json",
+        "pecia_cli.py"
+      ],
+      "precommit": true,
+      "on_fail": [
+        "A code or amendment level is allocated twice, or the generated",
+        "registry is stale. Regenerate: dev/vocab-check.py --write"
+      ],
+      "redcase": "tests.test_gates.RedCase.test_vocab_check_fires",
+      "claim": "vocab-check-wired"
+    },
+    {
+      "id": "prose-check",
+      "why": "Does README prose outrun the claim tier it projects, or does a referral dangle?",
+      "argv": [
+        "{top}/dev/prose-check.py"
+      ],
+      "staged_argv": [
+        "{top}/dev/prose-check.py",
+        "--root",
+        "{staged}"
+      ],
+      "inputs": [
+        "README.md",
+        "claims.yaml",
+        "PLAN.md",
+        "spec/format-v1.md"
+      ],
+      "triggers": [
+        "README.md",
+        "claims.yaml",
+        "PLAN.md",
+        "spec/format-v1.md"
+      ],
+      "precommit": true,
+      "on_fail": [
+        "README prose outruns the claim it projects, or a referral dangles.",
+        "Run: dev/prose-check.py"
+      ],
+      "redcase": "tests.test_gates.RedCase.test_prose_check_fires",
+      "claim": "prose-check-enforced"
+    },
+    {
+      "id": "schema-check",
+      "why": "Is every ledger line valid against spec/record.schema.json (single-record shape)?",
+      "argv": [
+        "{top}/dev/schema-check.py"
+      ],
+      "staged_argv": [
+        "{top}/dev/schema-check.py",
+        "--ledger",
+        "{staged}/.pecia/work.jsonl"
+      ],
+      "inputs": [
+        ".pecia/work.jsonl"
+      ],
+      "triggers": [
+        ".pecia/work.jsonl",
+        "spec/record.schema.json"
+      ],
+      "require_cached": ".pecia/work.jsonl",
+      "precommit": false,
+      "precommit_why_not": [
+        "NOT YET — and 'not yet' is the ruling, not 'no'. It is to be",
+        "enabled once it is set up right; the work is pc-9690.",
+        "",
+        "WHAT MEASUREMENT SAID ABOUT ENABLING IT AS-IS. Cost was never the",
+        "objection: it runs in 0.2s. The objection is that it caught NOTHING",
+        "at commit time that `pecia check` does not already catch. Nine",
+        "single-record mutations (type outside the enum, priority out of",
+        "range, priority/rev/labels as the wrong JSON type, status outside",
+        "the enum, malformed date, empty title) were put to both gates: both",
+        "rejected all nine, and both ACCEPTED an unknown extra field. Zero",
+        "unique catches. Turning it on in that shape would be a paid step",
+        "protecting no invariant already unprotected at that point — GP37",
+        "(decision-relevant parsimony) and BP26 (process theater).",
+        "",
+        "WHAT SET UP RIGHT MEANS. Its value is the one thing the overlap",
+        "makes possible and nothing currently uses: it is an INDEPENDENT",
+        "implementation — a published JSON Schema read by the jsonschema",
+        "library — of a judgement pecia's hand-rolled checker also makes.",
+        "GP28 keeps an independent observation that must agree and CHECKS",
+        "it, because the disagreement carries information a deduplicated",
+        "field would destroy; and a second implementation is the",
+        "pseudo-oracle that can catch a GENERATOR bug, which a `--check`",
+        "structurally cannot. So the commit gate to build is 'do these two",
+        "verdicts disagree on any record?' — not this one run twice. Flip",
+        "this to true when pc-9690 lands that, with a red-case arm proving",
+        "the differential can fire.",
+        "",
+        "Probe scope, stated so it is not overread: 9 mutations, all in",
+        "single-record shape — schema-check's own declared territory, which",
+        "is where overlap was most likely. A shape violation it alone",
+        "catches may exist; none was found. The unknown-extra-field result",
+        "is a SHARED blind spot, which a differential cannot see either."
+      ],
+      "redcase": "tests.test_gates.RedCase.test_schema_check_fires",
+      "claim": "adapter-affordance"
+    },
+    {
+      "id": "alloy-gate",
+      "why": "Do the ledger-algebra theorems hold, the traps still fail, and the seeded kills still fire?",
+      "argv": [
+        "{top}/dev/alloy-gate.sh"
+      ],
+      "staged_argv": null,
+      "inputs": [],
+      "precommit": false,
+      "precommit_why_not": [
+        "Bounded model-checking over three Alloy files; needs a JDK and the",
+        "pinned jar, and costs far more than a commit should. It carries its",
+        "own null arm (seeded-kills must FAIL), so it is the one gate in this",
+        "registry whose vacuity check is inside the gate rather than beside it."
+      ],
+      "redcase": null,
+      "claim": "formal-model"
+    },
+    {
+      "id": "doctor",
+      "why": "Is the enforcement ACTIVE in THIS clone — hooksPath wired, gates reachable? Posture, never correctness.",
+      "argv": [
+        "{top}/pecia_cli.py",
+        "doctor"
+      ],
+      "staged_argv": null,
+      "inputs": [],
+      "precommit": false,
+      "precommit_why_not": [
+        "Answers a question about the clone, not about the commit. Running it",
+        "from inside the hook is also near-circular: the hook only runs at all",
+        "when the posture it checks is already correct, so it would be a gate",
+        "that can never observe its own failure case (VP4)."
+      ],
+      "redcase": null,
+      "claim": "doctor-posture"
+    },
+    {
+      "id": "tests",
+      "why": "Does the implementation still do what its tests say it does?",
+      "argv": [
+        "uv",
+        "run",
+        "python3",
+        "dev/test-runner.py"
+      ],
+      "staged_argv": null,
+      "inputs": [],
+      "precommit": false,
+      "precommit_why_not": [
+        "Ninety seconds across twelve workers (nine minutes serial). A commit gate that",
+        "costs minutes is a commit gate people learn to bypass, which is worse than not",
+        "having it; the loop and the hook's fast gates cover commits, this covers rounds."
+      ],
+      "redcase": null,
+      "claim": "reference-implementation"
+    },
+    {
+      "id": "hook-secret-filenames",
+      "why": "Refuse secret-bearing filenames (.env, *.key, *.pem, secrets.*) entering the commit, renames included.",
+      "inline": true,
+      "hook": "dev/hooks/pre-commit",
+      "markers": [
+        "refusing to commit secret-bearing file(s)"
+      ],
+      "precommit": true,
+      "redcase": "tests.test_pecia.SecretFilenameGate.test_kill_dotenv_is_refused",
+      "claim": "hook-secret-filenames",
+      "redcase_mutation": {
+        "path": "dev/hooks/pre-commit",
+        "from": "if [ -n \"$blocked\" ]; then",
+        "to": "if false; then",
+        "why": "the refusal block never runs, while every registered marker stays in the hook"
+      }
+    },
+    {
+      "id": "hook-editor-debris",
+      "why": "Refuse every commit while editor debris (swap files, backups) is TRACKED in the index (pc-f0a3).",
+      "inline": true,
+      "hook": "dev/hooks/pre-commit",
+      "markers": [
+        "editor debris is TRACKED"
+      ],
+      "precommit": true,
+      "redcase": "tests.test_pecia.EditorDebrisGate.test_kill_a_tracked_swap_file_refuses_the_next_commit",
+      "claim": "hook-editor-debris",
+      "redcase_mutation": {
+        "path": "dev/hooks/pre-commit",
+        "from": "if [ -n \"$debris\" ]; then",
+        "to": "if false; then",
+        "why": "the refusal block never runs, while every registered marker stays in the hook"
+      }
+    },
+    {
+      "id": "hook-secret-scan",
+      "why": "Scan staged additions for key-shaped strings and refuse with the value redacted.",
+      "inline": true,
+      "hook": "dev/hooks/pre-commit",
+      "markers": [
+        "staged change contains a likely secret"
+      ],
+      "precommit": true,
+      "redcase": "tests.test_pecia.SecretScanGate.test_kill_openrouter_shaped_key_is_refused",
+      "claim": "hook-secret-scan",
+      "redcase_mutation": {
+        "path": "dev/hooks/pre-commit",
+        "from": "if [ -n \"$hits\" ]; then",
+        "to": "if false; then",
+        "why": "the refusal block never runs, while every registered marker stays in the hook"
+      }
+    },
+    {
+      "id": "hook-canonical-deletion",
+      "why": "Refuse a staged DELETION of a canonical gate input (set derived from gates.py --canonical-paths; fails closed when it cannot enumerate).",
+      "inline": true,
+      "hook": "dev/hooks/pre-commit",
+      "markers": [
+        "cannot enumerate the canonical gate inputs",
+        "refusing staged deletion of canonical file"
+      ],
+      "precommit": true,
+      "redcase": "tests.test_pecia.CanonicalDeletionGate.test_kill_staged_deletion_of_claims_yaml_is_refused",
+      "claim": "hook-canonical-deletion",
+      "redcase_mutation": {
+        "path": "dev/hooks/pre-commit",
+        "from": "for canonical_file in $canonical_paths dev/gates.json; do",
+        "to": "for canonical_file in ; do",
+        "why": "the deletion loop iterates over nothing, so no canonical path is ever checked and both markers stay in the hook"
+      }
+    },
+    {
+      "id": "hook-review-isolation",
+      "why": "A staged review report (research/M2-review-*.md, brief excluded per pc-1ef4) lands alone, never beside another staged file.",
+      "inline": true,
+      "hook": "dev/hooks/pre-commit",
+      "markers": [
+        "review reports must land in a dedicated commit"
+      ],
+      "precommit": true,
+      "redcase": "tests.test_pecia.ReviewReportIsolationGate.test_kill_a_review_report_staged_beside_another_file_is_refused",
+      "claim": "hook-review-isolation",
+      "redcase_mutation": {
+        "path": "dev/hooks/pre-commit",
+        "from": "if [ -n \"$review_reports\" ]; then",
+        "to": "if false; then",
+        "why": "the block the lane disabled: the isolation refusal becomes unreachable code with its marker still present"
+      }
+    },
+    {
+      "id": "hook-branch",
+      "why": "The manifest must declare the intended branch and it must match HEAD (pc-3303).",
+      "inline": true,
+      "hook": "dev/hooks/pre-commit",
+      "markers": [
+        "the manifest declares what to commit but not where",
+        "WRONG BRANCH"
+      ],
+      "precommit": true,
+      "redcase": "tests.test_pecia.BranchGate.test_kill_declaring_a_different_branch_than_head_is_refused",
+      "claim": "hook-branch-gate",
+      "redcase_mutation": {
+        "path": "dev/hooks/pre-commit",
+        "from": "if [ -f \"$manifest\" ]; then",
+        "to": "if false; then",
+        "why": "the branch declaration is never read, so a manifest naming another branch is never compared with HEAD"
+      }
+    },
+    {
+      "id": "hook-commit-manifest",
+      "why": "When .git/EXPECTED_COMMIT exists, every staged path must match a manifest line; consumed only on success.",
+      "inline": true,
+      "hook": "dev/hooks/pre-commit",
+      "markers": [
+        "staged files outside the declared manifest"
+      ],
+      "precommit": true,
+      "redcase": "tests.test_pecia.CommitManifestPathGate.test_kill_an_undeclared_staged_file_is_refused_and_named",
+      "claim": "hook-commit-manifest",
+      "redcase_mutation": {
+        "path": "dev/hooks/pre-commit",
+        "from": "if [ -f \"$manifest\" ] && [ -n \"$staged_files\" ]; then",
+        "to": "if false; then",
+        "why": "the staged set is never compared with the manifest, so an undeclared path commits silently"
+      }
+    }
+  ]
+}

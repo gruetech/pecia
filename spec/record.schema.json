@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "record.schema.json",
+  "title": "pecia record (format v3)",
+  "version": "3.8",
+  "description": "One record-revision of a pecia work ledger (.pecia/work.jsonl carries one of these per line). This schema is the adapter-facing contract for the SINGLE-RECORD shape — the E001 field contract of spec/format-v1.md (v1.4, as amended). Cross-record invariants (duplicate revisions E002 — under v2 a repeated (id,rev) means the log is corrupt rather than merged; E010 was deleted with the merge algebra at pc-0033 — edge-target existence E003, cycles E004, transition legality E005, disposition/evidence state checks E006/E007, revision contiguity E008, decision lineages E009, foreign-reference scheme declaration E011, unkept retirement promises E012, closure under a record that still blocks it E016, self-edges on any edge field E017) are the checker's territory: schema-valid never implies check-clean. Every value must also lie in the v3.0 canonical domain, which the checker enforces as E001 on every nested value, extension fields included: numbers are integers within ±(2^53−1) and never -0, object keys are ASCII and unique, strings are valid Unicode. Validate whole ledgers with `pecia check --ledger <file>` — and exit 0 means well-formed, never true (rule 1).",
+  "$comment": "Authority: pecia_cli.py's validate_record is the reference semantics; a divergence between this schema and the checker on a core shape is a defect (spec v1.6). The `version` field is the spec amendment level this schema was last synchronised to. CORRECTED 2026-08-18 (pc-b98b): this used to say spec v1.9 requires it to equal the highest amendment level in spec/format-v1.md — stale since pc-0033 (v2, 2026-08-12), which is what tests/test_pecia.py::SchemaSpecSync actually checks against now (it parses '## v2.N amendments' headings in spec/format-v2.md, falling back to 2.0 when none exist yet). Equality asserts review at that level, never that the constraints below changed. Where a repo's .pecia/config.yaml widens the vocabulary (extra_types/extra_statuses), the checker is authoritative and this schema documents core.",
+  "type": "object",
+  "required": [
+    "id",
+    "rev",
+    "type",
+    "title",
+    "status",
+    "priority",
+    "created",
+    "updated",
+    "edges",
+    "disposition",
+    "evidence",
+    "owner",
+    "labels",
+    "body"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/recordId",
+      "description": "Minted once at creation (pc- + hash over type/title/created/nonce, at least 12 hex wide since v3.0 and widened further against a local collision, pc-1c65); stable across edits; never sequential. Hash derivation is mint-time discipline, not post-hoc checkable — the schema can only enforce the token shape. Importers: derive ids deterministically from source ids so re-import is idempotent."
+    },
+    "rev": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1 at creation, +1 per appended revision. The ordering relation — dates are data, not order. A record IS its highest-rev line. (JSON true/false are not integers; the checker excludes Python bools explicitly.)"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "defect",
+        "task",
+        "decision",
+        "milestone",
+        "question"
+      ],
+      "$comment": "Core vocabulary. A repo's config may add extra_types (addition, never mutation of core meanings); records using them validate under the checker but not this schema."
+    },
+    "title": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Non-empty (whitespace-only fails)."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "in-progress",
+        "done",
+        "dropped",
+        "superseded"
+      ],
+      "$comment": "Stored states only. `blocked` and `ready` are computed queries and may NEVER be stored, including as config extras. extra_statuses widen this enum under the checker."
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "0 blocks-all-today .. 2 default .. 4 someday (excluded from `next`). Required since v1.2: the CLI always writes it; a foreign writer omitting it is malformed, not defaulted."
+    },
+    "created": {
+      "$ref": "#/$defs/isoDate"
+    },
+    "updated": {
+      "$ref": "#/$defs/isoDate"
+    },
+    "target": {
+      "$ref": "#/$defs/isoDate",
+      "description": "Optional milestone target date, consumed by `gantt`. E001 validates its shape on any record but never requires it."
+    },
+    "edges": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "description": "Scheduling edge: each target cannot be `done` while this record is non-terminal. Targets are ids; existence is E003 (checker, heads only) — config `planned:` ids are legal targets, so the schema requires only strings."
+        },
+        "retires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "description": "Scheduling edge, new in v1.13: each target is resolved BY this record, so closing this record closes it. Held by the RETIRER and never as a scalar retired_by on the retired, because the failure mode it detects is an over-promise — a claim about targets that may not exist, which is E003's dangling-target finding. A promise whose retirers have all gone terminal while the target has not is E012 (checker, heads only). Partial contribution is NOT this edge: use `blocks`. Targets are ids; config `planned:` ids are legal, so the schema requires only strings."
+        },
+        "parent": {
+          "$ref": "#/$defs/scalarEdge"
+        },
+        "duplicate_of": {
+          "$ref": "#/$defs/scalarEdge"
+        },
+        "discovered_from": {
+          "$ref": "#/$defs/scalarEdge"
+        },
+        "caused_by": {
+          "$ref": "#/$defs/scalarEdge"
+        },
+        "validates": {
+          "$ref": "#/$defs/scalarEdge"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/scalarEdge"
+        },
+        "no_edges": {
+          "const": true,
+          "description": "Declares the record deliberately edgeless, silencing the untriaged audit finding. Presence, not a toggle: when present it must be exactly true (v1.6)."
+        }
+      },
+      "additionalProperties": false,
+      "$comment": "Unknown edge keys are E001 errors. Every key is optional here (the checker reads absent keys as empty/null) but the CLI always writes all eight. `blocks` and `retires` are the list-valued edges; the other six are scalars."
+    },
+    "disposition": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Required on every terminal transition (E006, a head-state check): names what happened and why, sufficient for a reader with no session context. \"Fixed\" alone fails audit."
+    },
+    "evidence": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "A command runnable from repo root whose exit 0 licenses the closure, or a foreign reference <scheme>:<id> naming a fact another system owns (v1.7; claims:<id> is one instance), or \"unknown\" (non-terminal records only). Prose is not evidence. A reference is whitespace-free, which is what distinguishes it from a command. A command's SHAPE (E007, done defects) is read off the ledger and .pecia/config.yaml and never off the host (v1.8): the first token must contain \"/\" or be declared in extra_evidence_commands. Scheme DECLARATION is checked against .pecia/config.yaml resolvers (E011). Both are cross-record checks outside this schema; whether a command runs here, or a reference resolves, is audit's question, and truth is rule-1 territory."
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Stable identity string. Machine authors use a vendor-qualified identity (e.g. claude:fable-5) so provider drift is distinguishable from sampling variance."
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "body": {
+      "type": "string"
+    },
+    "forced": {
+      "const": true,
+      "description": "The write-gate bypass brand (v1.3): per-revision, never inherited. When present it must be exactly true. The checker is force-blind; audit enumerates every branded revision. CORRECTED 2026-08-18 (pc-b98b): this used to describe same-rev lines differing only in the brand as 'E010-divergent' (v1's merge algebra). E010 and the merge algebra it governed were deleted at pc-0033 (v2) — under the single hash-chained timeline, a repeated (id,rev) is log corruption, not a divergent duplicate to disposition."
+    },
+    "anchor": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "v2.5 (pc-05e4, closing pc-e039): the commit this revision was written against, stamped by the write path from `git rev-parse HEAD` — never authored, never required (rule 3), absent outside a git worktree and on an unborn branch. A cold agent runs `git diff <anchor>..HEAD` to see what moved under the record since it was written. Per-revision custody, like `forced`: sync re-chains carry the writer's anchor, and a new revision names its own commit rather than inheriting."
+    },
+    "anchor_dirty": {
+      "const": true,
+      "description": "v2.5: presence records that the worktree carried uncommitted tracked changes when the anchor was stamped, so the diff against the anchor under-reports what the writer saw. Presence, not a toggle (the `forced` convention), and only legal beside an `anchor`."
+    },
+    "ratified_by": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "v2.5 (pc-813f, closing pc-ff8f): who accepted this agent-authored decision — set by an explicit ratifying revision (`edit <id> --ratify`), never at creation. Travels with `ratified`; legal only on `decision` records. `audit` surfaces terminal decisions with a vendor-qualified owner and no ratification (`unratified-decision`)."
+    },
+    "ratified": {
+      "$ref": "#/$defs/isoDate",
+      "description": "v2.5: the date of the ratifying revision. Travels with `ratified_by`."
+    },
+    "context": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*:[A-Za-z0-9._/#-]+$",
+      "description": "v2.5 (pc-813f, closing pc-7ab3): a foreign reference into a shared orientation document, normally doc:<path>#<anchor>, resolved through the v1.7 resolver registry — the scheme must be declared (E011, as amended). Pull-on-demand by design: nothing primes it, because primed context measurably decays across compaction. `audit` reports `unresolvable-context` when the referent is missing."
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "recordId": {
+      "type": "string",
+      "pattern": "^pc-[A-Za-z0-9][A-Za-z0-9.-]*$"
+    },
+    "isoDate": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})?)?$"
+    },
+    "scalarEdge": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Custody edges (parent additionally schedules): null or a single target id. v2.7 (pc-94d2): the empty string is not null and names no record. v2.9 (pc-f97f): pattern \\S replaces minLength 1, which excluded only the truly empty string while E001 refuses any whitespace-only target — the divergence was exactly where claim 26 says schema and checker agree.",
+      "pattern": "\\S"
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "v2.5 pairing rules, kept in agreement with validate_record (spec v1.6: a divergence between schema and checker on a core shape is a defect).",
+      "if": {
+        "required": [
+          "ratified_by"
+        ]
+      },
+      "then": {
+        "required": [
+          "ratified"
+        ],
+        "properties": {
+          "type": {
+            "const": "decision"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "ratified"
+        ]
+      },
+      "then": {
+        "required": [
+          "ratified_by"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "anchor_dirty"
+        ]
+      },
+      "then": {
+        "required": [
+          "anchor"
+        ]
+      }
+    }
+  ],
+  "propertyNames": {
+    "pattern": "^[\\x00-\\x2d\\x2f-\\x7f]+$",
+    "description": "A non-empty ASCII name with no dot. No dotted top-level key (v2.7, pc-a437): dotted names collide with the touched grammar's edges.* paths. ASCII only (v3.0, pc-ddd9): the canonical form sorts keys by code point, which equals RFC 8785's UTF-16 order only for ASCII. The checker refuses both as E001, and applies the ASCII rule to nested object keys too, which propertyNames cannot reach."
+  }
+}

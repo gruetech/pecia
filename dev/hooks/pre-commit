@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+# Pre-commit for pecia: secret scan + claims-ledger check.
+# Enable per-clone with:  git config core.hooksPath dev/hooks
+# Bypass a false positive with:  git commit --no-verify
+set -euo pipefail
+
+fail=0
+
+# 1) Block secret-bearing filenames entering the commit.
+#    ACMRT, not AM (pc-bf96): a rename stages as R, which AM excludes, so
+#    `git mv notes.txt .env` produced an EMPTY path list and this gate never
+#    fired — and step 2 did not compensate, because a rename of innocuous
+#    content yields no diff to scan. C and T are included for the same reason.
+#    D stays OUT deliberately: removing an already-leaked secret must remain
+#    possible, and refusing the deletion would trap the file in the repo.
+blocked=$(git diff --cached --name-only --diff-filter=ACMRT \
+  | grep -E '(^|/)(\.env(\..*)?|\.envrc|.*\.(key|pem)|secrets\..*)$' || true)
+if [ -n "$blocked" ]; then
+  echo "✋ pre-commit: refusing to commit secret-bearing file(s):" >&2
+  echo "$blocked" | sed 's/^/   /' >&2
+  fail=1
+fi
+
+# 1b) Refuse a commit while editor debris is TRACKED (pc-f0a3). A vim swap
+#     file sat in the index for 25 days because the debris-removal sweep
+#     (e480959) enumerated the diff and the manifest gate governs only what is
+#     newly STAGED — neither looks at what is already tracked. So this reads
+#     the INDEX, the tree the commit will record, not the staged set: while
+#     any debris path is tracked, every commit is refused, whatever this
+#     commit contains. .gitignore keeps NEW debris from being staged; this
+#     catches what is already in.
+debris=$(git ls-files --cached | grep -E '(^|/)([^/]*\.sw[a-p]|[^/]*~|\.#[^/]*|#[^/]*#)$' || true)
+if [ -n "$debris" ]; then
+  echo "✋ pre-commit: editor debris is TRACKED (pc-f0a3):" >&2
+  echo "$debris" | sed 's/^/   /' >&2
+  echo "   Untrack it first: git rm --cached <file>" >&2
+  fail=1
+fi
+
+# 2) Scan staged additions for key-shaped strings.
+pattern='sk-or-v1-[A-Za-z0-9]{16,}|sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|Bearer[[:space:]]+[A-Za-z0-9._-]{20,}'
+hits=$(git diff --cached -U0 --no-color | grep -E '^\+' | grep -nE "$pattern" || true)
+if [ -n "$hits" ]; then
+  echo "✋ pre-commit: staged change contains a likely secret:" >&2
+  # Redact EVERY shape the pattern above matches (pc-d1b9). This used to
+  # rewrite only the sk- family, so an AKIA id or a Bearer token that tripped
+  # the gate was echoed verbatim into stderr — a gate that refuses a secret
+  # and then prints it, which is worst exactly where hook output is archived
+  # (CI logs, harness transcripts). Each rule keeps a 4-character prefix so
+  # the operator can still tell WHICH credential tripped it.
+  echo "$hits" | sed -E '
+    s/(sk-[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/\1…REDACTED/g
+    s/(AKIA[0-9A-Z]{4})[0-9A-Z]+/\1…REDACTED/g
+    s/(Bearer[[:space:]]+[A-Za-z0-9._-]{4})[A-Za-z0-9._-]+/\1…REDACTED/g
+    s/^/   /' >&2
+  echo "   False positive? commit with: git commit --no-verify" >&2
+  fail=1
+fi
+
+# Staged-state discipline (reviews 2-4, F7/F13/F14/F18): git commits the
+# INDEX. Every gate below therefore checks staged blobs, never the worktree,
+# and coupled files (ledger + config) are extracted as a staged PAIR.
+top="$(git rev-parse --show-toplevel)"
+staged_dir="$(mktemp -d)"
+trap 'rm -rf "$staged_dir"' EXIT
+
+# 2b) Refuse staged DELETION of a canonical ledger (F18): a file present in
+#     HEAD but absent from the index skips every content gate below. De-
+#     adopting pecia is a deliberate act — do it with --no-verify.
+# The guarded set is DERIVED from dev/gates.py's REQUIRED_INPUTS, not restated
+# here. It used to name four paths while the registry pinned nine, and round 6
+# of the pc-01db review showed why that gap mattered: `git rm --cached` leaves
+# the worktree copy in place, so nothing looks missing, and for an input that
+# is also a gate's `require_cached` precondition the deletion SKIPS the very
+# gate that would have objected. A hardcoded list here would be a fourth copy
+# of a fact the pin already owns (GP28) — and it is the copy that goes stale
+# silently, because nothing reads it back.
+#
+# IT FAILS CLOSED. If gates.py cannot enumerate, the hook refuses rather than
+# falling back to a shorter list: a guard that quietly shrinks when its source
+# is unavailable is worse than one that is honestly absent.
+if ! canonical_paths="$(python3 "$top/dev/gates.py" --canonical-paths)"    || [ -z "$canonical_paths" ]; then
+  echo "✋ pre-commit: cannot enumerate the canonical gate inputs." >&2
+  echo "   dev/gates.py --canonical-paths failed or returned nothing, so the" >&2
+  echo "   staged-deletion guard cannot know what it is protecting." >&2
+  echo "   Bypass: git commit --no-verify" >&2
+  fail=1
+fi
+
+# dev/gates.json is added explicitly: it is the registry itself rather than any
+# gate's input, so the pin does not name it and should not.
+for canonical_file in $canonical_paths dev/gates.json; do
+  if git cat-file -e "HEAD:$canonical_file" 2>/dev/null \
+     && ! git ls-files --cached --error-unmatch "$canonical_file" >/dev/null 2>&1; then
+    echo "✋ pre-commit: refusing staged deletion of canonical file $canonical_file." >&2
+    echo "   De-adoption is deliberate: git commit --no-verify" >&2
+    fail=1
+  fi
+done
+
+# 2c) Review reports are custody records and land ALONE. Three times a
+#     git add -A swept a reviewer's report (plus probe debris, once) into an
+#     unrelated commit — a discipline that failed three times is not a
+#     discipline, so: a staged M2-review-*.md may not share a commit with
+#     anything else.
+staged_files="$(git diff --cached --name-only)"
+# The brief is excluded by exact name (pc-1ef4): it is the scope document
+# handed TO reviewers, authored in-repo — a working file, not a delivered
+# custody record. non_review is then derived by subtracting the actual
+# reports from the staged set rather than by re-matching the pattern, so the
+# brief staged BESIDE a report counts as a rider and the report still lands
+# alone.
+review_reports="$(echo "$staged_files" | grep -E '^research/M2-review-.*\.md$' | grep -Fxv 'research/M2-review-brief.md' || true)"
+if [ -n "$review_reports" ]; then
+  non_review="$(echo "$staged_files" | grep -Fxv -f <(printf '%s\n' "$review_reports") || true)"
+  if [ -n "$non_review" ]; then
+    echo "✋ pre-commit: review reports must land in a dedicated commit (custody records, as delivered)." >&2
+    echo "   Staged alongside: $(echo "$non_review" | head -3 | tr '\n' ' ')..." >&2
+    echo "   Commit the report alone first, then the rest. Bypass: git commit --no-verify" >&2
+    fail=1
+  fi
+fi
+
+# 2d) Commit-manifest gate — the general form of the add -A lesson. If
+#     .git/EXPECTED_COMMIT exists (one path or shell glob per line, plus a
+#     required `branch:` declaration), every staged path must match a line;
+#     the manifest is consumed on success. Manifest or not, the current
+#     branch and any worktree activity NOT in this commit are listed —
+#     informed, never surprised.
+manifest="$(git rev-parse --git-dir)/EXPECTED_COMMIT"
+current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo DETACHED)"
+
+# 2d-i) Branch gate (pc-3303). Twice now an agent has committed onto another
+#       session's branch — once in axiomdb (pc-9378), once here — because the
+#       arrival check read `git log` and `git status` but never the branch
+#       name. pc-9378 was closed with a resolution to be careful, and that is
+#       exactly the prompt-level discipline this repo has already measured
+#       failing three times over `git add -A`. So the manifest that already
+#       declares WHAT is being committed must also declare WHERE.
+if [ -f "$manifest" ]; then
+  declared_branch="$(sed -n 's/^branch:[[:space:]]*//p' "$manifest" | head -1)"
+  if [ -z "$declared_branch" ]; then
+    echo "✋ pre-commit: the manifest declares what to commit but not where." >&2
+    echo "   HEAD is on: $current_branch" >&2
+    echo "   Add a line to .git/EXPECTED_COMMIT naming the branch you MEANT:" >&2
+    echo "     branch: $current_branch" >&2
+    echo "   Write the branch you intend, not the one you are on — the point is" >&2
+    echo "   to catch the case where those differ. Bypass: git commit --no-verify" >&2
+    fail=1
+  elif [ "$declared_branch" != "$current_branch" ]; then
+    echo "✋ pre-commit: WRONG BRANCH. This commit was meant for another branch." >&2
+    echo "   declared: $declared_branch" >&2
+    echo "   HEAD is:  $current_branch" >&2
+    echo "   A shared worktree may be checked out on another session's branch." >&2
+    echo "   Verify with: git branch --show-current" >&2
+    echo "   Bypass: git commit --no-verify" >&2
+    fail=1
+  fi
+fi
+
+if [ -f "$manifest" ] && [ -n "$staged_files" ]; then
+  unexpected=""
+  while IFS= read -r sf; do
+    [ -z "$sf" ] && continue
+    matched=0
+    while IFS= read -r pat; do
+      [ -z "$pat" ] && continue
+      case "$pat" in branch:*) continue ;; esac
+      case "$sf" in $pat) matched=1; break ;; esac
+    done < "$manifest"
+    [ "$matched" -eq 0 ] && unexpected="${unexpected}   ${sf}
+"
+  done <<< "$staged_files"
+  if [ -n "$unexpected" ]; then
+    echo "✋ pre-commit: staged files outside the declared manifest (.git/EXPECTED_COMMIT):" >&2
+    printf '%s' "$unexpected" >&2
+    echo "   Declare them in the manifest or unstage them. Bypass: git commit --no-verify" >&2
+    fail=1
+  fi
+fi
+
+# Unconditional: the branch is named on every commit, manifest or not. The
+# activity notice below has printed on every commit for days and the branch
+# was not in it, which is why the slip was invisible.
+echo "ℹ pre-commit: committing to branch '$current_branch'" >&2
+activity="$(git status --porcelain | awk 'substr($0,1,2)=="??" || substr($0,2,1) ~ /[^ ]/ {print "   " substr($0,4)}')"
+if [ -n "$activity" ]; then
+  echo "ℹ pre-commit: worktree activity NOT in this commit (reviewers? other sessions?):" >&2
+  printf '%s\n' "$activity" >&2
+fi
+
+# 3) THE GATE REGISTRY (dev/gates.json) runs every commit gate against the
+#    STAGED tree. Until pc-01db each gate was hand-wired here as its own
+#    numbered section, and the cost was exactly what you would predict: the
+#    hook, the scheduled agent's brief and the README each carried their own
+#    idea of what "the gates" are, and all three drifted. The 2026-09-02
+#    v1-prep run found the brief enumerating five gates when there were seven,
+#    and two of the seven had never been run unattended at all.
+#
+#    So there is now ONE list, and it is the list that EXECUTES. dev/gates.py
+#    is the only caller of any gate; this hook calls dev/gates.py. BP23 in the
+#    practice catalog names the alternative — "a guard registry maintained by
+#    the people who installed the guards errs toward claiming enforcement" —
+#    and an audit of one such registry found two rows reading as enforced when
+#    the hook had never been enabled in any clone. A registry that merely
+#    DESCRIBES can be wrong in silence. This one stops the commit.
+#
+#    Staged-blob discipline is UNCHANGED and now lives in one place: the
+#    runner extracts each gate's declared inputs from the index, preserving
+#    repo layout (the basename lesson from vocab-check's generated registry),
+#    falling back to the worktree for inputs present in HEAD but not staged,
+#    and skipping a gate whose declared triggers are untouched — a commit that
+#    poses none of a gate's questions has not posed them.
+#
+#    THE REGISTRY ITSELF IS READ FROM THE INDEX, for the same reason as every
+#    other input: a worktree edit to gates.json must not vouch for a commit
+#    that does not contain it.
+git show :dev/gates.json > "$staged_dir/gates.json" 2>/dev/null \
+  || cp "$top/dev/gates.json" "$staged_dir/gates.json"
+
+# 3a-0) THE FLOOR. These gate ids MUST be registered AND precommit:true. The
+#     list lives HERE, in the hook, and is deliberately NOT read from the file
+#     it checks — because a registry that audits only its own internal
+#     consistency is vacuous: an empty `{"gates":[]}` audited clean and ran
+#     nothing, and so did flipping all four to precommit:false with a
+#     plausible one-line excuse that no check ever reads. One file, one
+#     innocuous diff, every commit gate off. That is the BP23 failure this
+#     whole registry was written to fix, reproduced inside the fix.
+#
+#     Keeping the list in two places is GP28's other branch, not a lapse: this
+#     is not a restatement to normalise away, it is an INDEPENDENT observation
+#     that must agree with the registry, and the disagreement is the signal.
+#     Disabling a commit gate now costs an edit HERE as well, in the file
+#     `core.hooksPath` points at. That is the feature.
+#
+#     Found by an adversarial review of pc-01db that gutted the registry and
+#     watched the commit sail through.
+#     WHAT THIS FLOOR STILL CANNOT DO, stated because a half-fix presented as
+#     a fix is worse than a stated limit. Git runs hooks from the WORKTREE, not
+#     the index — this file and dev/gates.py execute as they exist on disk,
+#     however they are staged. dev/gates.json is the exception, re-read from
+#     the index below, which is why the config-level attacks above are
+#     catchable at all. An UNCOMMITTED edit to this file (an early `exit 0`)
+#     or to dev/gates.py defeats everything here and leaves no trace in the
+#     commit, and no check that lives inside this file can observe its own
+#     neutering. That is a property of git hooks, not of this design; it is
+#     the reason `doctor` reports posture separately, and the reason CI runs
+#     the checkers from a clean checkout rather than trusting a hook ran.
+REQUIRED_COMMIT_GATES="claims-check ledger-check vocab-check prose-check"
+
+# 3a) The registry must match the gates that are actually in this commit —
+#     add a gate without registering it, or register one you deleted, and this
+#     fires. That is what makes "adding or removing a gate requires editing
+#     the registry" a rule rather than a request (GP28's coverage axis applied
+#     to the gate set; VP21). It also refuses a registry claiming a red-case
+#     arm that does not exist.
+if ! python3 "$top/dev/gates.py" --audit --index \
+      --require "$REQUIRED_COMMIT_GATES" \
+      --registry "$staged_dir/gates.json" >/dev/null; then
+  echo "   Bypass: git commit --no-verify" >&2
+  fail=1
+fi
+
+# 3b) Run what is registered.
+if ! python3 "$top/dev/gates.py" --precommit \
+      --staged-root "$staged_dir/gates" \
+      --registry "$staged_dir/gates.json"; then
+  fail=1
+fi
+
+# Consume the manifest only when the WHOLE hook passed. It used to be removed
+# inside 2d, which is before steps 3 and 4 run — so a commit refused by
+# claims-check or the ledger checker exited non-zero with the declaration
+# already deleted, and the retry had nothing to declare. Yesterday's fix for
+# the same bug guarded on `fail` at 2d, which only covered the gates ABOVE it.
+# Found 2026-08-04 by the gate's first tests.
+if [ "$fail" -eq 0 ] && [ -f "$manifest" ]; then
+  rm -f "$manifest"
+fi
+
+exit $fail

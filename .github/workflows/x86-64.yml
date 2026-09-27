@@ -1,0 +1,71 @@
+# pecia's Rust on x86-64 — the only place it is ever run on that architecture.
+#
+# Development happens on Apple Silicon, where the binary is built and the suite
+# is run against it. This job is the other half: Linux on x86-64, so neither the
+# architecture nor the OS is the one the code quietly assumes. It builds every
+# target, runs the Rust tests, then runs the whole unittest suite against the
+# binary (PECIA_TEST_CLI), exactly as the port's acceptance run does.
+
+name: x86-64
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to a pull request supersedes its run. On main every commit keeps
+# its run: main moves in bursts, and cancelling there left no commit tested. The
+# group is per-commit for a push because a shared group, even without
+# cancel-in-progress, still drops a queued run when a newer one queues.
+concurrency:
+  group: x86-64-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      # A label is a request, not a guarantee: refuse to report an x86-64
+      # result from anything else.
+      - name: the runner is x86-64
+        run: |
+          uname -sm
+          test "$(uname -m)" = x86_64
+      # What the suite shells out to that a fresh runner lacks: ripgrep (the
+      # gates read their subjects with it), strace (the durability arm observes
+      # the binary's fsyncs with it, pc-26a08d9c5d46) and a git identity
+      # (publish commits a tree, and git refuses to without one).
+      - name: tools and git identity
+        run: |
+          command -v rg >/dev/null && command -v strace >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep strace; }
+          git config --global user.name "pecia CI"
+          git config --global user.email "ci@users.noreply.github.com"
+      - name: build every target
+        run: |
+          rustc -vV
+          cargo build --release --locked --all-targets
+          file target/release/pecia
+      - name: Rust tests
+        run: cargo test --release --locked
+      # The doctor fixtures resolve an installed `pecia`, as an adopter's hook
+      # does; here that is the binary under test.
+      - name: put the binary on PATH
+        run: echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
+      - name: the suite against the binary
+        env:
+          PECIA_TEST_CLI: ${{ github.workspace }}/target/release/pecia
+        run: uv run dev/test-runner.py -j 4
+      # The durability arms observe the binary's fsyncs with strace, and skip
+      # where strace is missing; here they must RUN against the Rust binary,
+      # or the suite's green says nothing about its durability (pc-26a08d9c5d46).
+      - name: the durability arms ran against the binary
+        env:
+          PECIA_TEST_CLI: ${{ github.workspace }}/target/release/pecia
+        run: |
+          out=$(uv run python -m unittest -k issues_the_syncs -k issues_no_sync tests.test_pecia.WritesAreDurable 2>&1); echo "$out"
+          echo "$out" | grep -q "^Ran 2 tests" && echo "$out" | grep -qx "OK"

@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# A pecia write gate for YOUR project. Copy this file, don't adapt pecia's.
+#
+#   mkdir -p dev/hooks && cp templates/pre-commit dev/hooks/pre-commit
+#   chmod +x dev/hooks/pre-commit
+#   git config core.hooksPath dev/hooks
+#   ./pecia_cli.py doctor        # confirms the gate is ACTIVE in THIS clone
+#
+# WHY THIS FILE EXISTS SEPARATELY FROM pecia's OWN HOOK. pecia's
+# dev/hooks/pre-commit checks pecia: its claims ledger, its README prose, its
+# spec vocabulary, its gate registry. None of that is yours. This is the part
+# that generalises — the ledger is well-formed, checked against what the commit
+# will actually contain — and it is the whole of the write gate as a claim.
+#
+# Bypass any refusal with:  git commit --no-verify
+set -euo pipefail
+
+top="$(git rev-parse --show-toplevel)"
+staged="$(mktemp -d)"
+trap 'rm -rf "$staged"' EXIT
+
+# WHERE THE CHECKER COMES FROM (pc-d182). An adopting repository does not
+# have pecia_cli.py at its own root — that assumption made these ten lines
+# uncopyable in practice. Resolution order: $PECIA_CLI if set, then `pecia`
+# on PATH, then the repo-local file, and a hard refusal when none resolves —
+# a gate that cannot find its checker must FAIL, never skip.
+#
+# ASK FOR THE FILE, NOT FOR WHAT THE SHELL WOULD RUN (pc-7acd, round-12 lane
+# E1-F2, v2.17). This asked `command -v pecia`, which is a different question
+# from the one the comment above states and from the only one this hook can
+# USE. `command -v` also matches shell functions, aliases and builtins, and
+# for a matched function it prints the BARE NAME — so an exported `pecia()`
+# made `cli=pecia`, which the slashless rebase below turned into `$top/pecia`,
+# a path that does not exist, and this gate refused every ordinary commit.
+# `doctor` resolves the same environment through a PATH search, cannot see a
+# shell function at all, predicted the repository-root fallback, and reported
+# ok: true one command earlier. `type -P` performs the PATH search for an
+# executable FILE and ignores functions, aliases and builtins — which is what
+# the sentence above already promised, what this hook can actually exec, and
+# the same question doctor asks. A `pecia` shell function now falls through to
+# the repo-local checker instead of killing the gate.
+pecia_on_path="$(type -P pecia || true)"
+if [ -n "${PECIA_CLI:-}" ]; then
+  cli="$PECIA_CLI"
+elif [ -n "$pecia_on_path" ]; then
+  cli="$pecia_on_path"
+else
+  cli="$top/pecia_cli.py"
+fi
+# ONE EXPRESSION, TESTED AND EXECUTED (pc-cb43). This file used to test
+# `[ -f "$cli" ]` — path semantics — and then run a non-.py checker as
+# `"$cli" "$@"`, which for a value containing no slash is a PATH LOOKUP. A
+# checker sitting at the repository root under a bare relative name
+# therefore passed the hook's own existence test and died at execution with
+# `checkwrap: command not found`, while `doctor` — resolving the same value
+# as a path, which is what claim 33 says it does — reported ok: true. No
+# stand-in resolving the value ONCE could match both readings, because the
+# two references disagreed. $PECIA_CLI is a PATH, and a relative one is
+# relative to the work-tree root (where git runs hooks, and where doctor
+# resolves it since pc-2f19), so it is made absolute here, once, and every
+# later reference — the test, the execution, and the remedy printed to the
+# adopter — is that same value.
+case "$cli" in
+  /*) ;;
+  *) cli="$top/$cli" ;;
+esac
+if [ ! -f "$cli" ]; then
+  echo "✋ pre-commit: no pecia CLI found — the gate cannot run." >&2
+  echo "   Set PECIA_CLI to the checker, put \`pecia\` on PATH, or place" >&2
+  echo "   pecia_cli.py at the repository root. Bypass: git commit --no-verify" >&2
+  exit 1
+fi
+
+# The CLI is stdlib-only, so for the .py form `python3` is enough and `uv` is
+# not required — invoked through python3 rather than the shebang precisely so
+# a machine without uv still gets a working gate. Anything else (a `pecia`
+# binary, a wrapper) is executed as itself — and `$cli` is absolute by the
+# time it gets here (pc-cb43), so "executed as itself" is never a PATH lookup
+# for something the existence test above proved is a file.
+run_cli() {
+  case "$cli" in
+    *.py) python3 "$cli" "$@" ;;
+    *) "$cli" "$@" ;;
+  esac
+}
+
+# A REMEDY NAMES THE CHECKER THIS HOOK RESOLVED (pc-7ab5). The refusals below
+# used to print a fixed `python3 pecia_cli.py …` line — the one invocation the
+# resolution order above exists because an adopting repository does NOT have.
+# In a PATH-only adoption that command exits 2, "No such file or directory", so
+# the message a refusal hands the adopter cannot run. This is what run_cli
+# does, spelled for a human to copy.
+#
+# AND IT IS QUOTED THE WAY THE SHELL NEEDS IT (pc-c59a). run_cli quotes "$cli"
+# and was unaffected, but the printed line was built by concatenation, so a
+# checker under a path containing a space — `vendor space/pecia cli.py` — was
+# printed as a command that splits at the space and exits 2, "can't open file
+# '…/vendor'", when retyped. The verdict and the findings were right and the
+# remedy unnamed itself at the first space. `printf %q` emits what this shell
+# would have to be given to reach the same file.
+quoted_cli="$(printf '%q' "$cli")"
+case "$cli" in
+  *.py) cli_cmd="python3 $quoted_cli" ;;
+  *) cli_cmd="$quoted_cli" ;;
+esac
+
+in_index() { git ls-files --cached --error-unmatch "$1" >/dev/null 2>&1; }
+in_head()  { git cat-file -e "HEAD:$1" 2>/dev/null; }
+
+# 1) THE LEDGER IS BEING DELETED. Refuse. `git rm --cached .pecia/work.jsonl`
+#    leaves the working copy in place, so nothing looks missing — and it also
+#    removes the file this gate reads, which would silently disable the gate
+#    rather than fail it. De-adopting pecia is a deliberate act; do it with
+#    --no-verify. snapshot.head joined the list at pc-421d: it is the witness
+#    binding the projection to the timeline, and deleting it committed clean
+#    while ordinary `check` refused the result (E015).
+for f in .pecia/work.jsonl .pecia/config.yaml .pecia/snapshot.head; do
+  if in_head "$f" && ! in_index "$f"; then
+    echo "✋ pre-commit: refusing staged deletion of $f." >&2
+    echo "   The ledger is custody. Removing it is deliberate: git commit --no-verify" >&2
+    exit 1
+  fi
+done
+
+# 2) No ledger in this commit and none in history: the repo has not adopted
+#    pecia (or has finished de-adopting it). Nothing to check.
+in_index .pecia/work.jsonl || exit 0
+
+# 3) CHECK THE INDEX, NEVER THE WORKING TREE. git commits the index, so a gate
+#    that reads the working tree passes a staged defect that an unstaged repair
+#    is hiding — and blocks a clean staged commit over unstaged edits. The
+#    ledger and config are extracted as a PAIR: a working-tree-only config
+#    entry must not vouch for a staged edge.
+mkdir -p "$staged/.pecia"
+git show :.pecia/work.jsonl > "$staged/.pecia/work.jsonl"
+git show :.pecia/config.yaml > "$staged/.pecia/config.yaml" 2>/dev/null || : > "$staged/.pecia/config.yaml"
+
+#
+#    AND IT REPORTS WHAT THE CHECKER SAID (pc-7ab5). This run sent the
+#    checker's output to /dev/null and printed a fixed recovery line, so the
+#    refusal threw away the finding it had just computed and told the adopter
+#    to re-run a command that need not resolve. The findings are captured and
+#    printed — the same treatment step 4 already gave them — and the re-run
+#    line names the checker THIS hook resolved.
+if ! run_cli check \
+      --ledger "$staged/.pecia/work.jsonl" \
+      --config "$staged/.pecia/config.yaml" >"$staged/check.out" 2>&1; then
+  echo "✋ pre-commit: pecia check failed on the STAGED ledger." >&2
+  echo "   What the checker said:" >&2
+  sed 's/^/     /' "$staged/check.out" >&2
+  echo "   Re-run it yourself with:" >&2
+  echo "     $cli_cmd check --ledger <(git show :.pecia/work.jsonl) \\" >&2
+  echo "         --config <(git show :.pecia/config.yaml)" >&2
+  echo "   Exit 0 would mean WELL-FORMED, never true. Bypass: git commit --no-verify" >&2
+  exit 1
+fi
+
+# 4) THE STAGED PROJECTION BINDS TO THIS CLONE'S TIMELINE (pc-421d). The
+#    --ledger run above checks SHAPE only — it never opens the authoritative
+#    log under --git-common-dir — so a projection copied from another store
+#    committed at exit 0 while ordinary `check` refused the same state with
+#    E015 one command later. When a local timeline exists, the staged
+#    projection and its staged snapshot.head witness are checked against it
+#    as a pinned store: a STALE projection stays clean (a branch
+#    legitimately lags), a forked or witness-less one is refused. A fresh
+#    clone (no local timeline — `git clone` never fetches refs/pecia/log)
+#    has nothing to bind against and keeps the shape check alone.
+#
+#    THE STAGED PAIR IS WHAT THIS CHECKS, HERE TOO (pc-91a0). This run used to
+#    omit --config, so the store route fell back to the WORKING TREE's
+#    .pecia/config.yaml: an unstaged config edit refused a clean staged pair
+#    that step 3 had just passed at exit 0 — the index-not-worktree discipline
+#    holding in one of the two checks that share the same contract. The config
+#    extracted in step 3 is reused, so both checks see one staged pair.
+#
+#    AND IT REPORTS WHAT THE CHECKER SAID. The message asserted E015 and
+#    prescribed `pecia snapshot`, which is the right remedy for a forked or
+#    witness-less projection and the wrong one for everything else the store
+#    route reports — an E001 condition arrived wearing E015's language and
+#    remedy. The findings are captured and printed instead: the codes are the
+#    checker's to name, not this template's to guess.
+common="$(git rev-parse --git-common-dir)"
+if [ -f "$common/pecia/log.jsonl" ]; then
+  mkdir -p "$staged/store"
+  cp "$common/pecia/log.jsonl" "$staged/store/log.jsonl"
+  git show :.pecia/work.jsonl > "$staged/store/work.jsonl"
+  if ! git show :.pecia/snapshot.head > "$staged/store/snapshot.head" 2>/dev/null; then
+    rm -f "$staged/store/snapshot.head"
+  fi
+  if ! ( export PECIA_LOG_DIR="$staged/store"
+         run_cli check --config "$staged/.pecia/config.yaml" ) >"$staged/binding.out" 2>&1; then
+    echo "✋ pre-commit: the STAGED .pecia/ projection does not bind to this clone's timeline." >&2
+    echo "   The commit would land a projection the timeline refuses. What the checker said:" >&2
+    sed 's/^/     /' "$staged/binding.out" >&2
+    echo "   A forked, corrupted or witness-less projection (E015 — stale alone is" >&2
+    echo "   clean) is regenerated with: $cli_cmd snapshot, then stage" >&2
+    echo "   .pecia/ again. Any other code names a defect in the records themselves." >&2
+    echo "   Bypass: git commit --no-verify" >&2
+    exit 1
+  fi
+  # 5) A STAGED PROJECTION BEHIND THE LOG IS CLEAN, AND SAID (v3.3). An
+  #    ordinary write no longer regenerates .pecia/work.jsonl — `snapshot`
+  #    does — so ledger changes reach a commit only when it is run first.
+  #    Stale is still clean (a branch legitimately lags) and the commit
+  #    proceeds; this names the gap so it is a choice, not an accident.
+  staged_lines=$(( $(git show :.pecia/work.jsonl | wc -l) ))
+  log_lines=$(( $(wc -l < "$common/pecia/log.jsonl") ))
+  if [ "$staged_lines" -lt "$log_lines" ]; then
+    echo "ℹ pre-commit: the staged .pecia/ projection holds $staged_lines of the log's $log_lines entries." >&2
+    echo "   To carry the rest in this commit: $cli_cmd snapshot, then stage .pecia/ again." >&2
+  fi
+fi

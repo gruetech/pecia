@@ -1,0 +1,18 @@
+[package]
+name = "pecia"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The pecia command-line interface: one binary, and `pecia mcp` for MCP clients."
+
+[[bin]]
+name = "pecia"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+pecia-commands = { path = "../pecia-commands" }
+pecia-mcp = { path = "../pecia-mcp" }

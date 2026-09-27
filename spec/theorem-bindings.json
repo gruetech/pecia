@@ -1,0 +1,109 @@
+{
+  "note": "Every assertion in spec/peciaV2.als and spec/pecia-v2-traps.als, and the tests that bind it to the code (pc-56e7849ddc32). The model is checked at scope and says nothing about the code; these are where the code is held to it. tests/test_gates.py::TheoremBindingsAreComplete requires this file to name exactly the model's assertions and every test here to exist. A `rust:` binding is a #[test] fn in the named file; a `python:` binding is a unittest id, run against whichever CLI PECIA_TEST_CLI names.",
+  "theorems": {
+    "PublishPreservesForkFreedom": {
+      "label": "V1",
+      "bound_by": [
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories",
+        "python:tests.test_pecia.TimelineGates.test_e013_kill_broken_prev_hash"
+      ]
+    },
+    "ChainedLogHasOneTip": {
+      "label": "V2",
+      "bound_by": [
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories",
+        "python:tests.test_pecia.TimelineGates.test_e013_kill_interior_line_omitting_prev_is_refused"
+      ]
+    },
+    "LastInChainCoincidesWithMaxRev": {
+      "label": "V3",
+      "bound_by": [
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories",
+        "python:tests.test_pecia.TimelineWritePath.test_the_cas_refuses_a_stale_revision",
+        "python:tests.test_pecia.TimelineGates.test_e014_kill_rev_does_not_follow_head"
+      ]
+    },
+    "PublishPreservesClean": {
+      "label": "V4",
+      "bound_by": [
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories",
+        "python:tests.test_pecia.WriteGate.test_edit_refuses_cycle_closing_edge"
+      ]
+    },
+    "RechainPreservesBothWhenDisjoint": {
+      "label": "V5",
+      "bound_by": [
+        "python:tests.test_pecia.SyncComposition.test_control_disjoint_fields_of_one_record_still_sync"
+      ]
+    },
+    "RechainPreservesClearing": {
+      "label": "V11",
+      "bound_by": [
+        "python:tests.test_pecia.SyncComposition.test_kill_clearing_context_commutes_with_a_disjoint_edit"
+      ]
+    },
+    "RechainedEntryPassesTheRevCas": {
+      "label": "V12",
+      "bound_by": [
+        "python:tests.test_pecia.SyncComposition.test_kill_a_two_revision_local_suffix_rechains_whole",
+        "python:tests.test_pecia.RechainValidatesBeforeArithmetic.test_control_a_clean_multi_revision_remote_still_rechains"
+      ]
+    },
+    "BrandCustodyThroughRechain": {
+      "label": "V13",
+      "bound_by": [
+        "python:tests.test_pecia.SyncComposition.test_kill_a_forced_noop_revision_survives_the_rechain"
+      ]
+    },
+    "BlameContainment": {
+      "label": "V7",
+      "bound_by": [
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories",
+        "python:tests.test_pecia.WriteGate.test_force_bypasses_brands_and_stays_visible"
+      ]
+    },
+    "NoDeadlockWhenAllOpen": {
+      "label": "V8",
+      "bound_by": [
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories",
+        "python:tests.test_pecia.RetiresEdge.test_several_retirers_do_not_deadlock"
+      ]
+    },
+    "ReadyBlockedPartition": {
+      "label": "V9",
+      "bound_by": [
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories"
+      ]
+    }
+  },
+  "traps": {
+    "BlindRechainPreservesBoth": {
+      "label": "trap 1: a same-field conflict is surfaced, never re-chained blind",
+      "bound_by": [
+        "python:tests.test_pecia.SyncComposition.test_kill_conflict_names_the_landed_rev_that_touched_the_field"
+      ]
+    },
+    "AuthoredTouchedNeverLosesAnUpdate": {
+      "label": "trap 2: touched is derived, never authored",
+      "bound_by": [
+        "python:tests.test_pecia.TimelineGates.test_e014_kill_touched_is_forged",
+        "rust:crates/pecia-core/tests/theorems.rs::the_models_theorems_hold_over_random_histories"
+      ]
+    },
+    "RechainByFieldDisjointnessAlonePreservesClean": {
+      "label": "trap 3: disjoint fields do not make a clean composition",
+      "bound_by": [
+        "python:tests.test_pecia.SyncComposition.test_kill_disjoint_records_that_compose_into_a_cycle_are_refused"
+      ]
+    },
+    "BrandSurvivesRechain": {
+      "label": "trap 4: the brand travels with the writer's revision",
+      "bound_by": [
+        "python:tests.test_pecia.SyncComposition.test_kill_a_forced_noop_revision_survives_the_rechain"
+      ]
+    }
+  },
+  "not_bound": {
+    "spec/pecia-v2-seeded-kills.als": "The seeded kills are mutations of the MODEL (no chain CAS, no rev CAS, a partial diff), the gate's null arm; they have no counterpart in the code to bind, and dev/alloy-gate.sh requires each to keep failing."
+  }
+}

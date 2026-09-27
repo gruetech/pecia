@@ -1,0 +1,13 @@
+[package]
+name = "pecia-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Where a pecia store lives, and reading it. The IO the core refuses to do."
+
+[lints]
+workspace = true
+
+[dependencies]
+pecia-core = { path = "../pecia-core" }

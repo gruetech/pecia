@@ -1,0 +1,117 @@
+# pecia CI — the vendor-neutral substrate no harness can route around.
+#
+# Trap 3 (spec v1.2): branch-local clean is NOT merge-clearance — cross-branch
+# edge additions can union into an E004 cycle invisible to every branch tip.
+# On pull_request events, actions/checkout checks out the PR MERGE ref, so
+# every job below validates the merge result. That property is the reason
+# this workflow exists (ledger record pc-4902).
+
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  substrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the timeline is reconstructible from every committed
+          # blob of the snapshot, and the hydrate fallback below needs them.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      # What the suite shells out to that a fresh runner lacks: ripgrep (the
+      # gates read their subjects with it), strace (the durability arm observes
+      # the CLI's fsyncs with it, pc-26a08d9c5d46) and a git identity
+      # (publish commits a tree, and git refuses to without one). Without
+      # ripgrep and the identity this job failed 123 tests on 91f0920
+      # (2026-09-25), all but a handful for those two reasons.
+      - name: tools and git identity
+        run: |
+          command -v rg >/dev/null && command -v strace >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep strace; }
+          git config --global user.name "pecia CI"
+          git config --global user.email "ci@users.noreply.github.com"
+      # The doctor fixtures resolve an installed `pecia`, as an adopter's hook
+      # does; here that is this checkout's pecia_cli.py.
+      - name: put pecia on PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          ln -s "$GITHUB_WORKSPACE/pecia_cli.py" "$RUNNER_TEMP/bin/pecia"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: claims ledger well-formedness
+        run: ./dev/claims-check.py
+      # v2 (pc-0033): the canonical ledger is a log under --git-common-dir, so
+      # a fresh checkout HAS NO TIMELINE. Obtain one before checking it.
+      # Preferred path is the published ref — that is the canonical chain,
+      # hashes and all. Fallback rebuilds it from committed history, which is
+      # content-identical, and since v3.7 (pc-9846a784839f) chain-identical
+      # too wherever the committed snapshot verifies, since migrate then
+      # takes the snapshot as its order. It exists so CI is not gated on a
+      # ref having been pushed, and it doubles as a standing assertion that
+      # the timeline IS reproducible from git.
+      #
+      # AND ONLY WHEN THE REF COVERS THE COMMIT (2026-09-25). Publishing is
+      # explicit, so any commit that carries records newer than the last
+      # `publish` has a snapshot ahead of the ref, and sync then refuses
+      # correctly: the snapshot's head is not in the chain it would adopt
+      # (E015). That was true before v3.3 too. The step stayed green only
+      # while every commit's snapshot equalled the ref (1244 entries,
+      # published 2026-09-25), and failed on every push from 9075dfe, the
+      # first commit to carry a record past it, through b607c71. Since v3.6
+      # (pc-4f84768dbed1) sync adopts such a commit's snapshot when its chain
+      # rebuilds to its recorded head and the ref is a prefix of it, so the
+      # rebuild below runs only where that fails: nothing published, a
+      # snapshot that does not verify, or a ref that has moved on from it.
+      - name: hydrate the timeline (the ref if it covers this commit, else rebuild)
+        run: |
+          if git fetch origin 'refs/pecia/*:refs/pecia/*' 2>/dev/null \
+             && git rev-parse --verify --quiet refs/pecia/log >/dev/null \
+             && ./pecia_cli.py sync; then
+            echo "hydrated from the published timeline"
+          else
+            echo "no published refs/pecia/log, or it is behind this commit's snapshot — rebuilding from history"
+            # EVERY refs/pecia ref goes, not only log: sync records the
+            # published head as refs/pecia/remote, and migrate reads that
+            # register too. And migrate checks a NAMED remote that does not
+            # exist, so its best-effort fetch (pc-5f0f) cannot re-learn the
+            # stale ref and refuse: a rebuild from history never extends a
+            # published chain. The first version of this fallback deleted
+            # only refs/pecia/log and let migrate fetch origin, so it could
+            # not work (pc-7e110b7cf434); this one was run in a scratch
+            # mirror against a stale ref, a current ref, and none, and all
+            # three hydrate with check at exit 0.
+            git for-each-ref --format='%(refname)' refs/pecia | while read -r ref; do git update-ref -d "$ref"; done
+            store="$(git rev-parse --git-common-dir)/pecia"
+            rm -f "$store/log.jsonl" "$store/log.mark"
+            ./pecia_cli.py migrate --remote no-published-timeline-here
+          fi
+      - name: work ledger structural check (E001-E009, E011-E017)
+        run: ./pecia_cli.py check
+      - name: test suite (kill matrix, null arm, trap + review fixtures)
+        run: uv run python -m unittest discover -s tests -v
+      # The durability arms observe the CLI's fsyncs with strace, and skip
+      # where strace is missing; on this runner they must RUN, or the suite's
+      # green says nothing about durability (pc-26a08d9c5d46).
+      - name: the durability arms ran here
+        run: |
+          out=$(uv run python -m unittest -k issues_the_syncs -k issues_no_sync tests.test_pecia.WritesAreDurable 2>&1); echo "$out"
+          echo "$out" | grep -q "^Ran 2 tests" && echo "$out" | grep -qx "OK"
+
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: ripgrep (the gate's structural checks read the models with it)
+        run: command -v rg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep; }
+      - uses: actions/cache@v4
+        with:
+          path: spec/.alloy
+          key: alloy-6.2.0
+      - name: alloy gate (theorems hold; traps and seeds still bite)
+        run: ./dev/alloy-gate.sh

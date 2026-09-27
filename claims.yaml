@@ -1,0 +1,274 @@
+schema_version: 1
+audit: '2026-09-26'
+claims:
+- id: pecia-definition
+  claim: A pecia is a transferable unit of intended work whose return can be
+    judged independently.
+  tier: asserted
+  evidence: none
+  verified: '2026-09-26'
+  kill: A design definition, not an empirical finding.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: reference-implementation
+  claim: The Python CLI passes the retained public behavioral suite at the
+    source candidate.
+  tier: tested
+  evidence: python3 dev/test-runner.py -j 4
+  verified: '2026-09-26'
+  kill: The suite includes E-code violation cases and a null scramble arm.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: rust-parity
+  claim: The Rust CLI is driven by the same public behavioral suite as the
+    Python CLI, with documented implementation-specific skips.
+  tier: tested
+  evidence: PECIA_TEST_CLI=target/release/pecia python3 dev/test-runner.py -j
+    4
+  verified: '2026-09-26'
+  kill: Shared subprocess assertions exercise both CLIs; Rust internal tests
+    cover separate implementation arms.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: v2-storage
+  claim: The CLI uses a local append-only log, published through
+    refs/pecia/log, with compare-and-swap checks and a generated reviewable
+    projection. For the default store the projection is .pecia/work.jsonl;
+    with PECIA_LOG_DIR pinned it sits beside its own log and nothing is
+    written into the repository. A refused sync leaves the store data
+    byte-identical but may leave an empty .lock behind.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.TimelineGates
+    tests.test_pecia.TimelineWritePath
+  verified: '2026-09-26'
+  kill: The named tests include damaged-log, stale-snapshot, and
+    divergent-head cases.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: deterministic-queries
+  claim: Ready, blocked, and next results are computed from the ledger graph
+    in a stable order.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.Determinism
+    tests.test_pecia.QueriesAndAudit
+  verified: '2026-09-26'
+  kill: The tests permute input order and include invalid graph cases.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: write-gate
+  claim: The checker refuses structural ledger violations and terminal records
+    without required disposition.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.WriteGate
+    tests.test_pecia.ECodeKillMatrix
+  verified: '2026-09-26'
+  kill: The E-code matrix supplies malformed inputs and a valid control.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: adopter-template
+  claim: The adopter pre-commit template checks staged ledger content when
+    installed in a clone.
+  tier: tested
+  evidence: python3 -m unittest tests.test_adopter_template
+  verified: '2026-09-26'
+  kill: Tests demonstrate bad staged input is rejected and valid input passes;
+    doctor reports whether the hook is active locally.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: board-projection
+  claim: Board is a read-only human view over ledger state.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.BoardProjection
+  verified: '2026-09-26'
+  kill: Tests exercise statuses, blocked work, and adversarial text.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: mcp-server
+  claim: The Rust CLI exposes its commands through a stdio MCP server.
+  tier: tested
+  evidence: cargo test --release -p pecia-mcp -p pecia
+  verified: '2026-09-26'
+  kill: Tests exercise protocol replies and output boundaries.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: stdlib-only
+  claim: The adopter-facing Python CLI needs only Python 3.11 or newer and the
+    standard library.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.TheCliIsStdlibOnly
+  verified: '2026-09-26'
+  kill: The test checks imports and the isolated one-file invocation.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: format-spec
+  claim: The v2 format is documented and implemented; a clean composed-scope
+    off-lineage review of a frozen public release remains open.
+  tier: asserted
+  evidence: spec/format-v2-consolidated.md
+  verified: '2026-09-26'
+  kill: A passing test suite is not a validation verdict for the complete
+    spec.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: formal-model
+  claim: A bounded Alloy model and seeded traps are included; its result is
+    scoped to the model and run.
+  tier: asserted
+  evidence: dev/alloy-gate.sh
+  verified: '2026-09-26'
+  kill: The public release has not yet rerun the formal gate.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: dogfood
+  claim: pecia was adopted for work in one sibling repository; two further
+    exercises were one-shot imports, and pecia also tracks its own
+    development.
+  tier: asserted
+  evidence: none
+  verified: '2026-09-26'
+  kill: The full observations remain in the separate development archive; this
+    public tree does not independently re-run them.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: self-hosting
+  claim: The public repository uses pecia to track its own forward-looking
+    work from its first public commit.
+  tier: asserted
+  evidence: ./pecia_cli.py check
+  verified: '2026-09-26'
+  kill: The initial public commit and fresh-clone replay are still being
+    prepared.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: adapter-affordance
+  claim: External adapters can produce the documented record format; bundled
+    adapter examples are outside the core.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.RecordSchema
+    tests.test_pecia.AdaptersContract
+  verified: '2026-09-26'
+  kill: Schema and example adapter tests include invalid inputs.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: query-prose-containment
+  claim: Human and JSON output bound untrusted ledger prose at their declared
+    output limits.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.OutputForm
+    tests.test_pecia.OutputCaps
+  verified: '2026-09-26'
+  kill: Tests plant control bytes and oversized values and assert their
+    boundaries.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: doctor-posture
+  claim: Doctor reports whether the adopter hook is active in the current
+    clone.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.DoctorPosture
+    tests.test_pecia.DoctorChecksCheckerResolution
+  verified: '2026-09-26'
+  kill: Fixtures include unconfigured hooks and wrong checker resolution.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: claims-check-enforced
+  claim: The public claims register is checked for typed, well-formed entries
+    by the repository pre-commit hook when that hook is active.
+  tier: tested
+  evidence: python3 -m unittest
+    tests.test_gates.RedCase.test_claims_check_fires
+  verified: '2026-09-26'
+  kill: The red case stages a malformed register and requires a refusal.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: prose-check-enforced
+  claim: The README claim bindings are checked against the register by the
+    repository pre-commit hook when active.
+  tier: tested
+  evidence: python3 -m unittest
+    tests.test_gates.RedCase.test_prose_check_fires
+  verified: '2026-09-26'
+  kill: The red case plants a dangling or overstated binding.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: vocab-check-wired
+  claim: The vocabulary registry is checked for duplicate or stale
+    allocations.
+  tier: tested
+  evidence: python3 -m unittest tests.test_vocab
+  verified: '2026-09-26'
+  kill: Tests plant duplicate and stale vocabulary entries.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: hook-secret-filenames
+  claim: The repository hook refuses staged secret-bearing filenames.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.SecretFilenameGate
+  verified: '2026-09-26'
+  kill: Red cases stage blocked filenames; clean controls commit.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: hook-secret-scan
+  claim: The repository hook scans staged additions for selected credential
+    shapes.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.SecretScanGate
+  verified: '2026-09-26'
+  kill: Red cases plant selected credential shapes and verify redacted
+    diagnostics.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: hook-canonical-deletion
+  claim: The repository hook refuses staged deletion of registered canonical
+    inputs.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.CanonicalDeletionGate
+  verified: '2026-09-26'
+  kill: Red cases stage deletion while keeping the worktree file.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: hook-review-isolation
+  claim: The repository hook isolates review report commits when such reports
+    are staged.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.ReviewReportIsolationGate
+  verified: '2026-09-26'
+  kill: Red cases stage a report beside unrelated files.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: hook-commit-manifest
+  claim: When an expected-commit manifest is present, the repository hook
+    refuses undeclared staged paths.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.CommitManifestPathGate
+  verified: '2026-09-26'
+  kill: Red cases stage undeclared paths; controls exercise matching
+    manifests.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: hook-branch-gate
+  claim: The repository hook compares the intended branch in a commit manifest
+    with the current branch.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.BranchGate
+  verified: '2026-09-26'
+  kill: Red cases name a different branch or omit the declaration.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: hook-editor-debris
+  claim: The repository hook refuses tracked editor debris.
+  tier: tested
+  evidence: python3 -m unittest tests.test_pecia.EditorDebrisGate
+  verified: '2026-09-26'
+  kill: Red cases track editor debris; controls distinguish untracked files.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.
+- id: claude-harness-wiring
+  claim: Optional Claude hooks can veto task creation without a shaped ledger
+    id, but do not prove that id exists.
+  tier: asserted
+  evidence: python3 -m unittest tests.test_claude_hooks
+  verified: '2026-09-26'
+  kill: Runtime hook invocation depends on the host installation.
+  notes: Public tree at the 2026-09-26 source candidate; reverify at the
+    release commit.

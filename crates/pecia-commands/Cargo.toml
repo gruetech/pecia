@@ -1,0 +1,15 @@
+[package]
+name = "pecia-commands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "pecia's commands, returning values: the CLI and the MCP server are two renderers of one reply."
+
+[lints]
+workspace = true
+
+[dependencies]
+pecia-core = { path = "../pecia-core" }
+pecia-store = { path = "../pecia-store" }
+pecia-sys = { path = "../pecia-sys" }

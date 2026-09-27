@@ -1,0 +1,16 @@
+[package]
+name = "pecia-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "What pecia asks of the operating system: the local date, the login user, entropy, the terminal. The workspace's only unsafe code, through libc."
+
+# The one crate that is not under the workspace's `forbid(unsafe_code)`: the OS
+# calls std has no API for live here and nowhere else (pc-2426297cff1f). Every
+# other crate forbids unsafe, which no `allow` can override.
+
+[dependencies]
+pecia-core = { path = "../pecia-core" }
+# The C types and constants behind those calls, per target.
+libc = "0.2"

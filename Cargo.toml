@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["crates/pecia-core", "crates/pecia-store", "crates/pecia-sys", "crates/pecia-commands", "crates/pecia-mcp", "crates/pecia-cli"]
+
+[workspace.package]
+# The one version fact (pc-00c9d07f9bde): every crate inherits it, `pecia
+# --version` and the MCP serverInfo report it, and pecia_cli.py's VERSION is
+# held equal to it by tests/test_pecia.py::VersionIsOneFact.
+version = "0.9.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+
+# `unsafe` is refused in every crate but pecia-sys, which holds the OS calls
+# std has no API for and does not take these lints (pc-2426297cff1f).
+[workspace.lints.rust]
+unsafe_code = "forbid"
