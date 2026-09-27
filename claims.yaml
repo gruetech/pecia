@@ -267,3 +267,13 @@ claims:
   kill: Runtime hook invocation depends on the host installation.
   notes: Public tree at the 2026-09-26 source candidate; reverify at the
     release commit.
+- id: product-category
+  claim: pecia is a Git-backed issue tracker for developers and AI coding
+    agents, with records for defects, tasks, decisions, and milestones.
+  tier: asserted
+  evidence: none
+  verified: '2026-09-26'
+  kill: This is a product-category description grounded in documented
+    features, not a measured usability or adoption result.
+  notes: The category phrase names issue tracking; Git transport, record
+    types, and CLI behavior are separately scoped in this register.
