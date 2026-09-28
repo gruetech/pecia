@@ -46,7 +46,7 @@ git clone https://github.com/gruetech/pecia /path/to/pecia-source
 Rust and Cargo are needed to build:
 
 ```sh
-cargo install --path /path/to/pecia-source/crates/pecia-cli --locked
+cargo install --git https://github.com/gruetech/pecia.git --locked pecia
 cd /path/to/your-repo
 pecia init
 pecia check

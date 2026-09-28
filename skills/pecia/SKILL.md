@@ -12,11 +12,12 @@ installation, use Rust when Cargo is available. Use the Python 3.11+ file if
 the user chooses it or Cargo is unavailable; do not replace an existing
 installation just to change implementations.
 
-Clone the source, then install one implementation:
+Install Rust with Cargo. Clone the source separately for the adopter hook,
+or to copy the Python implementation:
 
 ```sh
+cargo install --git https://github.com/gruetech/pecia.git --locked pecia
 git clone https://github.com/gruetech/pecia /path/to/pecia-source
-cargo install --path /path/to/pecia-source/crates/pecia-cli --locked
 # Or, for Python:
 cp /path/to/pecia-source/pecia_cli.py /path/to/your-repo/pecia_cli.py
 ```
