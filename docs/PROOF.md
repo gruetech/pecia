@@ -8,8 +8,11 @@ lets one set of behavior assertions run against both executables.
 
 The public repository began at commit `223ec84`, curated from private source
 commit `0ddbf9f26eaaf429a02da8bce12c51fb3cd17f2e`. Historical research
-and process-only tests were removed. These are local arm64 macOS observations
-from the public repo on 2026-09-26, before a public-host CI run:
+and process-only tests were removed. The table below records local arm64
+macOS observations from 2026-09-26. Public workflow results must be read at
+the exact commit: [CI at `cd80560`](https://github.com/gruetech/pecia/actions/runs/36491147659)
+and [x86-64 at `cd80560`](https://github.com/gruetech/pecia/actions/runs/36491147653)
+both passed on 2026-09-28. Later commits require their own runs.
 
 | Run | Result | Scope |
 | --- | --- | --- |
@@ -18,7 +21,13 @@ from the public repo on 2026-09-26, before a public-host CI run:
 | Rust internal tests | Passed, release profile | The first public cut exposed tests that assumed a large private ledger. The public corpus now combines its committed lines with fixed generated records; the complete Rust workspace test run passed after that repair. |
 | Fresh-clone install | Python copy and Cargo install passed | From a clone of `223ec84`, each CLI completed `init`, `add`, `snapshot`, `check`, `next`, and a hook-mediated commit in a scratch adopter repo. |
 | New public ledger | Six records published and synced | A temporary local bare remote held `refs/pecia/log`; a second clone ran `sync`, `doctor`, `check`, and `next`. Before sync, `doctor` reported D009 as expected. This is local transport evidence, not GitHub publication evidence. |
-| Python 3.14 smoke | Import and explicit-ledger `check` passed | The public commit hook first failed under unpinned Python 3.14 because a source docstring contained an unpaired surrogate escape. Escaping the example fixed the local run; CI now has version smoke jobs awaiting the public host. |
+| Python 3.14 smoke | Import and explicit-ledger `check` passed | The public commit hook first failed under unpinned Python 3.14 because a source docstring contained an unpaired surrogate escape. Escaping the example fixed the local run. Public CI also runs Python 3.11, 3.13, and 3.14 smoke jobs; see the exact run above. |
+
+The public GitHub remote later accepted `refs/pecia/log` with a matching
+read-back. An anonymous clone of `cd80560` ran `sync`, `doctor`, `check`, and
+`next` on its six records. The first-use runs remain scripted scratch trials,
+not independent adopter use.
+<!-- claims: self-hosting -->
 
 The skipped Rust arms include Python-only import and implementation probes.
 They are not Rust passes. Rust's own tests exercise internal properties,
@@ -31,17 +40,19 @@ The curated test tree omits private agent-review round tests and sibling
 adapter tests because their fixtures live in the separate development archive.
 The first cut without those fixtures failed solely in those areas; after
 removing the corresponding test modules and classes, the suite above passed.
-The public release SHA still needs its own CI run and an outsider first-use
-trial before a hard-launch claim is warranted.
+A hard-launch claim requires complete CI on the chosen exact release SHA
+and an outsider first-use trial. The local runs in this table do not supply
+that verdict.
 
 ## Scale regression
 
 On 2026-09-27, the release-profile Rust CLI locally completed `check`,
 `next --limit 10`, and `show` on a generated timeline of 400,000 independent
 open tasks, one revision each. The generator checks the record count and query
-results. The x86-64 CI workflow now runs the same script, but its first
-public-host result is still pending. This workload exercises a large issue
-count; it does not establish performance for a dense dependency graph,
+results. The x86-64 CI workflow runs the same script; its
+[first public successful run](https://github.com/gruetech/pecia/actions/runs/36491147653)
+is a second host observation at `cd80560`. This workload exercises a large
+issue count; it does not establish performance for a dense dependency graph,
 repeated revisions, or writes at that size.
 <!-- claims: rust-scale-local -->
 
@@ -67,4 +78,4 @@ The dogfooding report is also asserted in this public tree: one real sibling
 adoption, two one-shot imports, and pecia's own ledger are different
 observations. The full record remains in the development archive. No benchmark
 result is a general performance guarantee; the 400,000-task observation is
-bounded to its generated workload and local host until public-host CI runs.
+bounded to its generated workload and the hosts actually observed.

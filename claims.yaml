@@ -97,12 +97,13 @@ claims:
     standard library.
   tier: tested
   evidence: python3 -m unittest tests.test_pecia.TheCliIsStdlibOnly
-  verified: '2026-09-26'
+  verified: '2026-09-28'
   kill: The test checks imports and the isolated one-file invocation.
   notes: One-file invocation passed in scratch adopter repos on Python 3.12. A
     direct Python 3.14.7 import and ledger check also passed after escaping a
-    lone surrogate in a source docstring; older supported interpreters need
-    public CI coverage.
+    lone surrogate in a source docstring. Public CI smoke jobs for 3.11, 3.13,
+    and 3.14 passed at cd805609d09e5c5f424424e014c222c2b7a2c409; these are
+    import/check probes, not the full behavioral suite.
 - id: format-spec
   claim: The v2 format is documented and implemented; a clean composed-scope
     off-lineage review of a frozen public release remains open.
@@ -138,12 +139,15 @@ claims:
     work from its first public commit.
   tier: tested
   evidence: python3 pecia_cli.py check && python3 pecia_cli.py next
-  verified: '2026-09-26'
+  verified: '2026-09-28'
   kill: 'A fresh clone initially reported D009: no local timeline. Publishing the
     chain to a temporary local bare remote and running sync hydrated the same six-entry
     head before doctor and check passed.'
-  notes: Initial public candidate commit 223ec84 (2026-09-26). This is a local
-    first-clone test, not a public GitHub release or an outsider trial.
+  notes: Initial public candidate commit 223ec84 (2026-09-26) had a local
+    first-clone test. The six-entry log was later published and read back on
+    the public GitHub remote; an anonymous clone at
+    cd805609d09e5c5f424424e014c222c2b7a2c409 ran sync, doctor, check, and
+    next. This is not an outsider task trial.
 - id: adapter-affordance
   claim: External adapters can produce the documented record format; bundled
     adapter examples are outside the core.
@@ -283,13 +287,14 @@ claims:
   tier: tested
   evidence: mise exec -- python dev/scale-regression.py --cli
     target/release/pecia --count 400000
-  verified: '2026-09-27'
+  verified: '2026-09-28'
   kill: The script asserts the checked record count, the first next result,
     and the last record read by show; a wrong exit or result fails the run.
   notes: 'Local Apple Silicon run: fixture generation 73.28 s, check 3.46 s, next
     1.91 s, show 0.06 s. These are one-host observations, not comparative or CI
-    timing guarantees. The x86-64 CI step is added but has not run on the public
-    host.'
+    timing guarantees. The first public x86-64 workflow passed its 400,000-task
+    regression at commit cd805609d09e5c5f424424e014c222c2b7a2c409 (GitHub Actions
+    run 36491147653). Check later runs at their exact SHA.'
 - id: agent-skill
   claim: The public repository includes a pecia SKILL.md for agent setup,
     fresh-clone recovery, and routine issue work; its effectiveness across
