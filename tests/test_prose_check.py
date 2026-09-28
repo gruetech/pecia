@@ -423,8 +423,8 @@ class ShippedReadmeBindings(unittest.TestCase):
     def test_storage_prose_binds_to_a_claim_stating_storage(self) -> None:
         readme = (ROOT / "README.md").read_text()
         claims = (ROOT / "claims.yaml").read_text()
-        para = self.region(readme, "pecia is a work ledger",
-                           "## Use it in an existing Git repository")
+        para = self.region(readme, "# pecia\n",
+                           "## Install with a coding agent")
         self.assertIn("v2-storage", para,
                       msg="the storage paragraph must bind to a storage claim")
         entry = re.search(r"- id: v2-storage\n((?:  .*\n)+)", claims)
@@ -438,12 +438,12 @@ class ShippedReadmeBindings(unittest.TestCase):
 
     def test_every_capability_bullet_carries_a_marker(self) -> None:
         readme = (ROOT / "README.md").read_text()
-        queries = self.region(readme, "pecia is a work ledger",
-                              "## Use it in an existing Git repository")
+        queries = self.region(readme, "# pecia\n",
+                              "## Install with a coding agent")
         self.assertIn("<!-- claims:", queries)
         self.assertIn("deterministic-queries", queries)
-        custody = self.region(readme, "### Python: copy one file",
-                              "### Rust: install the CLI")
+        custody = self.region(readme, "### After installation",
+                              "### Turn on the adopter commit gate")
         self.assertIn("<!-- claims:", custody)
         self.assertIn("v2-storage", custody)
 
@@ -475,8 +475,8 @@ class ProjectionPathIsScopedToItsStore(unittest.TestCase):
 
     def storage_prose(self) -> str:
         readme = (ROOT / "README.md").read_text()
-        return readme[readme.index("### Python: copy one file"):
-                      readme.index("### Rust: install the CLI")]
+        return readme[readme.index("### After installation"):
+                      readme.index("### Turn on the adopter commit gate")]
 
     def claim_text(self) -> str:
         claims = (ROOT / "claims.yaml").read_text()
