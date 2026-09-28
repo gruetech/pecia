@@ -296,9 +296,10 @@ claims:
     agent products has not been measured.
   tier: asserted
   evidence: skills/pecia/SKILL.md; skill-creator quick_validate.py
-  verified: '2026-09-27'
+  verified: '2026-09-28'
   kill: The syntax validator accepts the skill, but no independent first-use
     trial has tested agent decisions from it.
   notes: The skill is a portable file in the source tree, not an installed
-    skill in an adopter repository. Its instructions defer commands and
-    detailed recovery steps to the current source README and storage guide.
+    skill in an adopter repository. Its two sections contain Rust and Python
+    installation, hook setup, fresh-clone posture, and routine use without
+    requiring the README.
