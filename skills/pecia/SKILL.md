@@ -39,9 +39,11 @@ git config core.hooksPath dev/hooks
 ```
 
 Run `doctor` to confirm the hook is active. Commit `.pecia/config.yaml`, `.pecia/work.jsonl`,
-`.pecia/snapshot.head`, the hook, and `pecia_cli.py` if copied. Record the
-chosen command and fresh-clone procedure in the target repository's
-`AGENTS.md` without replacing its other instructions.
+`.pecia/snapshot.head`, the hook, `.gitignore` if `init` added its lock-file rule,
+and `pecia_cli.py` if copied.
+
+Record the chosen command and fresh-clone procedure in the target
+repository's `AGENTS.md` without replacing its other instructions.
 
 In a fresh clone of an existing ledger, run `doctor`, `sync`, and `check`
 before writing. If `doctor` finds the hook inactive, integrate and enable it

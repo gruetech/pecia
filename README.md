@@ -71,7 +71,8 @@ python3 pecia_cli.py check
 
 ### After installation
 
-Commit `.pecia/config.yaml`, `.pecia/work.jsonl`, and `.pecia/snapshot.head`;
+Commit `.pecia/config.yaml`, `.pecia/work.jsonl`, and `.pecia/snapshot.head`.
+If `init` added a `.pecia/.lock` rule to `.gitignore`, commit that file too;
 also commit `pecia_cli.py` if you chose Python. The log lives under Git's
 shared directory by default; `snapshot` writes its reviewable projection.
 After a new clone, run `sync` to fetch the published log before writing. If
