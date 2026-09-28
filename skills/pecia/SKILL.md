@@ -5,11 +5,12 @@ description: Install or use pecia, the Git-backed issue tracker for developers a
 
 ## Installing pecia
 
-Inspect the target Git repository for existing `.pecia` files and a configured
-commit hook before changing either. Keep the pecia source checkout separate
-from the repository that will use it. Prefer Rust: it includes the stdio MCP
-server and has a local 400,000-issue scale regression. The Python 3.11+ CLI is
-a one-file alternative; both use the same storage format.
+Inspect the target Git repository for an existing pecia installation, `.pecia`
+files, and a configured commit hook before changing them. Keep the pecia
+source checkout separate from the repository that will use it. For a new
+installation, use Rust when Cargo is available. Use the Python 3.11+ file if
+the user chooses it or Cargo is unavailable; do not replace an existing
+installation just to change implementations.
 
 Clone the source, then install one implementation:
 
