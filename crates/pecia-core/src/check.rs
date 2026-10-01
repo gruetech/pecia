@@ -636,8 +636,16 @@ pub fn run_checks(records: &[&Value], parse_findings: Vec<Finding>, cfg: &Config
     }
     for (rid, revs) in &dup {
         let present: Vec<i64> = revs.keys().copied().collect();
-        let (lo, hi) = (present[0], present[present.len() - 1]);
-        let gaps: Vec<Value> = (lo..=hi).filter(|r| !revs.contains_key(r)).map(Value::Int).collect();
+        // Describe missing intervals rather than enumerating every missing
+        // integer before the diagnostic is capped (pc-693cc656803b).
+        let gaps: Vec<Value> = present.windows(2).filter_map(|pair| {
+            let (before, after) = (pair[0], pair[1]);
+            if after <= before.saturating_add(1) {
+                return None;
+            }
+            let (first, last) = (before + 1, after - 1);
+            Some(if first == last { Value::Int(first) } else { Value::Str(format!("{first}..{last}")) })
+        }).collect();
         if !gaps.is_empty() {
             findings.push(error(Code::E008, Some(rid), &format!("revision gap(s): {}", capped_array(&Value::Array(gaps), MESSAGE_VALUE_CAP))));
         }

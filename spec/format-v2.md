@@ -3933,3 +3933,25 @@ for it; the rest of the batch is written as before. A **forced** revision is
 still written even when it changes nothing, because its brand records a use
 of the escape hatch, which audit enumerates (`pc-dacc`). `sync`'s claim-35
 skip is unchanged, for no-op revisions already in a log.
+
+## v3.9 amendments (2026-09-30 — publish one validated generation; bound sparse gaps)
+
+### `publish` uses the bytes it checked (defect `pc-2f9f89d79f67`)
+
+`publish` must parse, run the full timeline check, compare the published
+prefix, and construct its Git blob from **one captured byte sequence**. A
+concurrent append after that capture belongs to a later publication attempt.
+It must not enter the blob or the prefix comparison of this attempt. Before
+this amendment, both implementations checked one read of the local log and
+then reread the live file for the blob; a controlled append of an invalid
+line between those operations produced a published blob the checker had
+never accepted.
+
+### E008 names missing intervals (defect `pc-693cc656803b`)
+
+E008 still reports a revision gap for each affected id, over the same
+well-typed `(id, rev)` pairs. Its diagnostic now names each maximal missing
+interval: one missing revision remains a number, and a longer run is written
+as `first..last`. The diagnostic cap applies to intervals. Checking two
+present revisions must not enumerate every integer between them merely to
+construct the message.

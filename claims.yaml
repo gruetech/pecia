@@ -308,3 +308,35 @@ claims:
     skill in an adopter repository. Its two sections contain Rust and Python
     installation, hook setup, fresh-clone posture, and routine use without
     requiring the README.
+- id: publish-validated-generation
+  claim: Publish constructs its local Git blob and checks the published prefix
+    from the same captured log bytes that passed parse and timeline
+    validation; a later concurrent append is excluded from that publication.
+  tier: tested
+  evidence: 'Python: tests.test_pecia.PublishUsesValidatedBytes under the shared
+    suite; Rust: cargo test -p pecia-commands --locked publish_uses_the_bytes_it_validated_even_after_an_append.'
+  verified: '2026-09-30'
+  kill: On the pre-fix Python implementation, the controlled after-validation
+    append produced a published blob containing not-json while cmd_publish
+    exited 0. The fixed Python and Rust arms append at that boundary and
+    require the published blob to equal the validated bytes.
+  notes: 'Defect pc-2f9f89d79f67 in the development archive. The public code was
+    tested in an isolated clone on 2026-09-30. Practice Catalog v3.4 GP8, VP4 and
+    BP4: compare the Git blob to captured bytes; exit 0 alone does not prove the
+    publication claim.'
+- id: e008-bounded-gaps
+  claim: E008 reports maximal missing revision intervals per id rather than
+    enumerating absent revision numbers; constructing the diagnostic scales
+    with present revisions, not the numeric size of a gap.
+  tier: tested
+  evidence: 'Python shared suite: tests.test_pecia.ECodeKillMatrix.test_e008_kill_sparse_gap_reports_a_range
+    and test_e008_extreme_sparse_gap_is_bounded; Rust shared cases with PECIA_TEST_CLI
+    set to the built binary, plus cargo test -p pecia-core --locked.'
+  verified: '2026-09-30'
+  kill: The pre-fix Python case expanded absent revision integers. The fixed
+    two-record extreme-gap CLI arm has a five-second bound and reports one
+    interval; singleton and unsound-copy controls preserve existing behavior.
+    Rust runs the same shared cases.
+  notes: Defect pc-693cc656803b in the development archive. This is a finite
+    regression guard, not a general scale benchmark. Practice Catalog v3.4
+    GP8, VP4, VP5 and VP12.

@@ -10,7 +10,7 @@ use crate::args::Parsed;
 use crate::cmd::query::config;
 use crate::cmd::store_cmds::{load_entries, snapshot_files};
 use crate::ctx::{obj, s, Ctx, RULE1};
-use pecia_core::check::{source_lines, timeline_errors, SnapshotFiles};
+use pecia_core::check::{read_log, source_lines, timeline_errors, SnapshotFiles};
 use pecia_core::config::py_strip;
 use pecia_core::parse::parse;
 use pecia_core::record::{as_obj, get};
@@ -93,10 +93,26 @@ pub fn remote_selection_refusal(requested: Option<&str>, remotes: &str) -> Optio
 }
 
 pub fn publish(ctx: &Ctx, args: &Parsed) -> Result<u8, String> {
+    publish_with_after_validation(ctx, args, || {})
+}
+
+fn publish_with_after_validation(ctx: &Ctx, args: &Parsed, after_validation: impl FnOnce()) -> Result<u8, String> {
     let Some(target) = ctx.store.log_path() else {
         return Ok(ctx.cannot_run("not inside a git repository"));
     };
-    let (entries, findings) = load_entries(ctx)?;
+    // Parse, validate, and publish one immutable generation. A second read
+    // after validation could include an append the checker never saw.
+    let log_bytes = match pecia_store::read_optional(&target)? {
+        Some(bytes) => bytes,
+        None => {
+            let (_, findings) = load_entries(ctx)?;
+            return Ok(ctx.cannot_run(&findings.first().map_or_else(
+                || "timeline disappeared before publication — retry".to_string(),
+                |f| f.message.clone(),
+            )));
+        }
+    };
+    let (entries, findings) = read_log(&log_bytes);
     if let Some(f) = findings.first() {
         return Ok(ctx.cannot_run(&f.message));
     }
@@ -110,7 +126,7 @@ pub fn publish(ctx: &Ctx, args: &Parsed) -> Result<u8, String> {
     if let Some(bad) = timeline_errors(&entries, &cfg, Some(&snap)).first() {
         return Ok(ctx.cannot_run(&format!("refusing to publish an unclean timeline: {}", bad.message)));
     }
-    let log_bytes = std::fs::read(&target).map_err(|e| e.to_string())?;
+    after_validation();
     let (code, blob, err) = git_run(ctx, &["hash-object", "-w", "--stdin"], Some(&log_bytes));
     if code != 0 {
         return Ok(ctx.cannot_run(&format!("could not write the log blob: {err}")));
@@ -639,4 +655,57 @@ pub fn sync(ctx: &Ctx, args: &Parsed) -> Result<u8, String> {
 /// null for an empty timeline.
 pub(crate) fn head_of(entries: &[Value]) -> Value {
     pecia_core::check::log_head_hash(entries).map_or(Value::Null, Value::Str)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pecia_store::Store;
+
+    #[test]
+    fn publish_uses_the_bytes_it_validated_even_after_an_append() {
+        let root =
+            std::env::temp_dir().join(format!("pecia-publish-generation-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("repo dir");
+        assert_eq!(git::code(&root, &["init", "-q"]), Some(0));
+        assert_eq!(
+            git::code(&root, &["config", "user.name", "Pecia Test"]),
+            Some(0)
+        );
+        assert_eq!(
+            git::code(&root, &["config", "user.email", "pecia@example.invalid"]),
+            Some(0)
+        );
+        let ctx = Ctx::new(Store::at(root.canonicalize().expect("root")));
+        let rec = parse(r#"{"id":"pc-aaaa","rev":1,"type":"task","title":"t","status":"open","priority":2,"created":"2026-07-20","updated":"2026-07-20","edges":{"blocks":[],"retires":[]},"disposition":null,"evidence":"unknown","owner":"o","labels":[],"body":""}"#).expect("record");
+        let entry = pecia_core::write::make_entry(&[], &rec);
+        write_log_validated(&ctx, &[entry], None, None, true)
+            .expect("writer ran")
+            .expect("written");
+        let target = ctx.store.log_path().expect("log");
+        let validated = std::fs::read(&target).expect("read original");
+        let args = match crate::args::parse(&["pecia".to_string(), "publish".to_string()]) {
+            crate::args::Outcome::Run(args) => args,
+            _ => panic!("publish args"),
+        };
+        let status = publish_with_after_validation(&ctx, &args, || {
+            use std::io::Write;
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&target)
+                .expect("log open")
+                .write_all(b"not-json\n")
+                .expect("interleaved append");
+        })
+        .expect("publish ran");
+        assert_eq!(status, 0);
+        let (code, blob, err) = git::run_raw(&root, &["show", "refs/pecia/log:log.jsonl"], None);
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+        assert_eq!(blob, validated);
+        assert_eq!(
+            std::fs::read(&target).expect("current log"),
+            [validated, b"not-json\n".to_vec()].concat()
+        );
+    }
 }

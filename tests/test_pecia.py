@@ -596,6 +596,25 @@ class ECodeKillMatrix(PeciaBase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("E008", self.codes(result))
 
+    def test_e008_kill_sparse_gap_reports_a_range(self) -> None:
+        """pc-693cc656803b: two records must not expand 999 missing revs."""
+        self.write(record(rev=1), record(rev=1001, title="edited"))
+        result = self.check()
+        self.assertEqual(result.returncode, 1, msg=result.stdout + result.stderr)
+        gaps = [f for f in self.findings(result) if f["code"] == "E008"]
+        self.assertEqual(len(gaps), 1)
+        self.assertIn('["2..1000"]', gaps[0]["message"])
+
+    def test_e008_extreme_sparse_gap_is_bounded(self) -> None:
+        """A huge valid rev with two lines still takes only a short check."""
+        self.write(record(rev=1), record(rev=1_000_000_000_000, title="edited"))
+        result = subprocess.run(cli_argv("check"), cwd=self.repo, text=True,
+                                capture_output=True, timeout=5, check=False)
+        self.assertEqual(result.returncode, 1, msg=result.stdout + result.stderr)
+        gaps = [f for f in self.findings(result) if f["code"] == "E008"]
+        self.assertEqual(len(gaps), 1)
+        self.assertIn('["2..999999999999"]', gaps[0]["message"])
+
     def test_e008_kill_gap_with_unsound_endpoint_copy(self) -> None:
         """pc-8291 (round-6 lane A'-F2): E008 grouped over record_is_sound
         records against its own gloss ('over well-typed (id, rev) pairs' —
@@ -9003,6 +9022,45 @@ class ChainHeadIsReported(PeciaBase):
         last = [l for l in self.log.read_text().split("\n") if l][-1]
         self.assertEqual(json.loads(got.stdout)["head"],
                          hashlib.sha256(last.encode()).hexdigest())
+
+
+class PublishUsesValidatedBytes(PeciaBase):
+    """pc-2f9f89d79f67: the blob must be the generation just validated."""
+
+    def test_kill_an_append_after_validation_is_not_published(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python in-process interleaving; Rust has its own arm")
+        import contextlib
+        import io
+
+        self.write(record())
+        validated = self.log.read_bytes()
+        original_read = PECIA.read_log
+        injected = False
+
+        def append_after_read(*args, **kwargs):
+            nonlocal injected
+            result = original_read(*args, **kwargs)
+            if not injected:
+                injected = True
+                with self.log.open("ab") as stream:
+                    stream.write(b"not-json\n")
+            return result
+
+        with mock.patch.object(PECIA, "ROOT", self.repo), \
+                mock.patch.object(PECIA, "PECIA_DIR", self.repo / ".pecia"), \
+                mock.patch.object(PECIA, "CONFIG_PATH", self.repo / ".pecia" / "config.yaml"), \
+                mock.patch.object(PECIA, "read_log", side_effect=append_after_read), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            result = PECIA.cmd_publish(argparse.Namespace(remote=None))
+
+        self.assertTrue(injected)
+        self.assertEqual(result, 0, msg=output.getvalue())
+        blob = subprocess.run(["git", "show", "refs/pecia/log:log.jsonl"],
+                              cwd=self.repo, capture_output=True, check=True).stdout
+        self.assertEqual(blob, validated,
+                         msg="publication must use the exact bytes that passed validation")
+        self.assertNotIn(b"not-json", blob)
 
 if __name__ == "__main__":
     unittest.main()

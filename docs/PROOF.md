@@ -41,8 +41,22 @@ adapter tests because their fixtures live in the separate development archive.
 The first cut without those fixtures failed solely in those areas; after
 removing the corresponding test modules and classes, the suite above passed.
 A hard-launch claim requires complete CI on the chosen exact release SHA
-and an outsider first-use trial. The local runs in this table do not supply
-that verdict.
+and a fresh-clone first-use check on its final executable. The local runs in
+this table do not supply that verdict for later executable changes.
+
+## 2026-09-30 local fix candidate
+
+Two survey findings now have regression arms in both implementations.
+`publish` checks and publishes one captured generation of log bytes; the
+Python and Rust arms append an invalid line after validation and verify the
+published blob contains only the validated bytes. E008 reports missing
+revision intervals without expanding every absent integer; shared Python
+and Rust cases include a two-record gap ending at revision 1,000,000,000,000.
+In the curated public clone, the Python suite ran 1,255 tests (OK, 11
+skipped), the Rust workspace tests passed, and the focused E008 cases passed
+against the Rust CLI. These are local candidate results. Public CI and a
+fresh-clone check are still owed on the exact release SHA.
+<!-- claims: publish-validated-generation, e008-bounded-gaps -->
 
 ## Scale regression
 

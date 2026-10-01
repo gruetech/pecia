@@ -1522,21 +1522,23 @@ def touched_conflicts(a: set[str], b: set[str]) -> set[str]:
     return overlap
 
 
-def read_log(path: Path | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def read_log(path: Path | None = None, *, raw_bytes: bytes | None = None
+             ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Return (entries, findings). E012 is chain integrity: a broken `prev`
     or a seq that is not exactly one greater means the log was spliced,
     truncated, or edited out of band."""
     target = path or log_path()
     entries: list[dict[str, Any]] = []
     findings: list[dict[str, Any]] = []
-    if target is None or not target.exists():
+    if target is None or (raw_bytes is None and not target.exists()):
         return entries, findings
     prev_hash: str | None = None
     # Sibling of pc-0a2f's shape, fixed in the same commit: read_text()
     # decoded strictly, so a LOCAL log carrying an invalid-UTF-8 byte killed
     # every consumer (check included) as fatal E000 UnicodeDecodeError with
     # no line named. Surrogateescape the decode; refuse per line, below.
-    text = target.read_bytes().decode("utf-8", errors="surrogateescape")
+    text = (raw_bytes if raw_bytes is not None else target.read_bytes()).decode(
+        "utf-8", errors="surrogateescape")
     for n, raw in enumerate(source_lines(text), start=1):
         if not raw.strip():
             # One JSON object per line is the contract, and E001 says every
@@ -3580,9 +3582,15 @@ def run_checks(records: list[dict[str, Any]], parse_findings: list[dict[str, Any
     # copy's own E001, with the gap's own signal silently absent.
     for rid, revs in sorted(dup_groups.items()):
         present = sorted(revs)
-        expected = list(range(present[0], present[-1] + 1))
-        if present != expected:
-            gaps = sorted(set(expected) - set(present))
+        # A missing span is one diagnostic participant. Expanding every
+        # integer before capping the message made two sparse records consume
+        # time and memory proportional to their numeric distance (pc-693cc656803b).
+        gaps: list[int | str] = []
+        for before, after in zip(present, present[1:]):
+            if after > before + 1:
+                first, last = before + 1, after - 1
+                gaps.append(first if first == last else f"{first}..{last}")
+        if gaps:
             findings.append(finding("error", "E008", rid,
                 f"revision gap(s): {capped_array(gaps)}"))
 
@@ -7552,7 +7560,15 @@ def cmd_publish(args: argparse.Namespace) -> int:
     target = log_path()
     if target is None:
         return cannot_run("not inside a git repository")
-    entries, findings = load_entries()
+    # Validate the generation we will publish. A second read after validation
+    # can include a concurrent append that no checker saw (pc-2f9f89d79f67).
+    try:
+        log_bytes = target.read_bytes()
+    except FileNotFoundError:
+        _, findings = load_entries()
+        return cannot_run(findings[0]["message"] if findings else
+                          "timeline disappeared before publication — retry")
+    entries, findings = read_log(target, raw_bytes=log_bytes)
     if findings:
         return cannot_run(findings[0]["message"])
     if not entries:
@@ -7561,7 +7577,8 @@ def cmd_publish(args: argparse.Namespace) -> int:
     if bad:
         return cannot_run(f"refusing to publish an unclean timeline: {bad[0]['message']}")
 
-    code, blob, err = git_run("hash-object", "-w", "--stdin", stdin=target.read_text())
+    log_text = log_bytes.decode("utf-8")  # a clean read_log accepted every line
+    code, blob, err = git_run("hash-object", "-w", "--stdin", stdin=log_text)
     if code != 0:
         return cannot_run(f"could not write the log blob: {err}")
     code, tree, err = git_run("mktree", stdin=f"100644 blob {blob}\tlog.jsonl\n")
@@ -7612,7 +7629,7 @@ def cmd_publish(args: argparse.Namespace) -> int:
         # here would misalign the prefix comparison into a false fork. The
         # blank filter is retained shape only — read_log above already
         # refused any blank line before this point.
-        mine_lines = [l for l in source_lines(target.read_text()) if l.strip()]
+        mine_lines = [l for l in source_lines(log_text) if l.strip()]
         if mine_lines[:len(prior_lines)] != prior_lines:
             return cannot_run(
                 f"refusing to publish: the ref currently holds {len(prior_lines)} entries "
