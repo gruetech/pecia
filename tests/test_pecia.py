@@ -9027,6 +9027,55 @@ class ChainHeadIsReported(PeciaBase):
 class PublishUsesValidatedBytes(PeciaBase):
     """pc-2f9f89d79f67: the blob must be the generation just validated."""
 
+    def test_publish_preserves_utf8_bytes_under_ascii_locale(self) -> None:
+        """The Git blob must not be re-encoded through the process locale."""
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python subprocess encoding; Rust sends raw bytes")
+        env = os.environ.copy()
+        env.update({"LC_ALL": "C", "PYTHONUTF8": "0",
+                    "PYTHONCOERCECLOCALE": "0"})
+        probe = subprocess.run(
+            [sys.executable, "-c", "import locale; print(locale.getencoding())"],
+            env=env, capture_output=True, text=True, check=True)
+        if probe.stdout.strip().lower() not in {"us-ascii", "ansi_x3.4-1968"}:
+            self.skipTest("C locale is not ASCII on this host")
+
+        self.write(record(title="caf\u00e9"))
+        validated = self.log.read_bytes()
+        result = subprocess.run(cli_argv("publish"), cwd=self.repo, env=env,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0,
+                         msg=result.stdout + result.stderr)
+        blob = subprocess.run(["git", "show", "refs/pecia/log:log.jsonl"],
+                              cwd=self.repo, capture_output=True,
+                              check=True).stdout
+        self.assertEqual(blob, validated)
+
+    def test_publish_preserves_utf8_bytes_under_latin1_locale(self) -> None:
+        """A representable title must not silently corrupt the Git blob."""
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python subprocess encoding; Rust sends raw bytes")
+        env = os.environ.copy()
+        env.update({"LC_ALL": "en_US.ISO8859-1", "PYTHONUTF8": "0",
+                    "PYTHONCOERCECLOCALE": "0"})
+        probe = subprocess.run(
+            [sys.executable, "-c", "import locale; print(locale.getencoding())"],
+            env=env, capture_output=True, text=True, check=False)
+        if probe.returncode != 0 or probe.stdout.strip().lower() not in {
+                "iso8859-1", "iso-8859-1", "latin-1"}:
+            self.skipTest("ISO-8859-1 locale is unavailable on this host")
+
+        self.write(record(title="caf\u00e9"))
+        validated = self.log.read_bytes()
+        result = subprocess.run(cli_argv("publish"), cwd=self.repo, env=env,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0,
+                         msg=result.stdout + result.stderr)
+        blob = subprocess.run(["git", "show", "refs/pecia/log:log.jsonl"],
+                              cwd=self.repo, capture_output=True,
+                              check=True).stdout
+        self.assertEqual(blob, validated)
+
     def test_kill_an_append_after_validation_is_not_published(self) -> None:
         if not CLI_IS_PYTHON:
             self.skipTest("Python in-process interleaving; Rust has its own arm")
@@ -9061,6 +9110,227 @@ class PublishUsesValidatedBytes(PeciaBase):
         self.assertEqual(blob, validated,
                          msg="publication must use the exact bytes that passed validation")
         self.assertNotIn(b"not-json", blob)
+
+
+class LocaleIndependentStorage(PeciaBase):
+    """Python's persisted UTF-8 files must not depend on the shell locale."""
+
+    def locale_env(self, name: str, accepted: set[str]) -> dict[str, str]:
+        env = os.environ.copy()
+        env.update({"LC_ALL": name, "PYTHONUTF8": "0",
+                    "PYTHONCOERCECLOCALE": "0"})
+        probe = subprocess.run(
+            [sys.executable, "-c", "import locale; print(locale.getencoding())"],
+            env=env, capture_output=True, text=True, check=False)
+        if probe.returncode != 0 or probe.stdout.strip().lower() not in accepted:
+            self.skipTest(f"{name} locale is unavailable on this host")
+        return env
+
+    def test_snapshot_under_ascii_locale_writes_utf8_and_cleans_staging(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python text writer; Rust serializes UTF-8")
+        env = self.locale_env("C", {"us-ascii", "ansi_x3.4-1968"})
+        self.write(record(title="caf\u00e9"))
+        expected = self.ledger.read_bytes()
+        result = subprocess.run(cli_argv("snapshot"), cwd=self.repo, env=env,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertEqual(self.ledger.read_bytes(), expected)
+        self.assertEqual(list((self.repo / ".pecia").glob(".work.jsonl.staged.*")), [])
+
+    def test_snapshot_under_latin1_locale_does_not_corrupt_projection(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python text writer; Rust serializes UTF-8")
+        env = self.locale_env("en_US.ISO8859-1",
+                              {"iso8859-1", "iso-8859-1", "latin-1"})
+        self.write(record(title="caf\u00e9"))
+        expected = self.ledger.read_bytes()
+        result = subprocess.run(cli_argv("snapshot"), cwd=self.repo, env=env,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertEqual(self.ledger.read_bytes(), expected)
+
+    def test_add_then_snapshot_under_ascii_locale_writes_utf8(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python text writer; Rust serializes UTF-8")
+        env = self.locale_env("C", {"us-ascii", "ansi_x3.4-1968"})
+        result = subprocess.run(
+            cli_argv("add", "--type", "task", "--title", "caf\u00e9"),
+            cwd=self.repo, env=env, capture_output=True, text=True,
+            check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("caf\u00e9".encode("utf-8"), self.log.read_bytes())
+        snapshot = subprocess.run(cli_argv("snapshot"), cwd=self.repo, env=env,
+                                  capture_output=True, text=True, check=False)
+        self.assertEqual(snapshot.returncode, 0,
+                         msg=snapshot.stdout + snapshot.stderr)
+        self.assertIn("caf\u00e9".encode("utf-8"), self.ledger.read_bytes())
+
+    def test_fresh_init_under_ascii_locale_writes_utf8_config(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python text writer; Rust serializes UTF-8")
+        env = self.locale_env("C", {"us-ascii", "ansi_x3.4-1968"})
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            result = subprocess.run(cli_argv("init"), cwd=root, env=env,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0,
+                             msg=result.stdout + result.stderr)
+            config = (root / ".pecia" / "config.yaml").read_bytes()
+            self.assertIn("—".encode("utf-8"), config)
+
+    def test_init_under_latin1_locale_keeps_unicode_repository_path(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python Git output decoding; Rust uses raw bytes")
+        env = self.locale_env("en_US.ISO8859-1",
+                              {"iso8859-1", "iso-8859-1", "latin-1"})
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            parent = Path(directory)
+            root = parent / "caf\u00e9"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            result = subprocess.run(cli_argv("init"), cwd=root, env=env,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0,
+                             msg=result.stdout + result.stderr)
+            self.assertTrue((root / ".pecia" / "config.yaml").exists())
+            self.assertFalse((parent / "caf\u00c3\u00a9").exists())
+
+    def test_publish_unicode_remote_under_ascii_locale_reads_back(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python Git output decoding; Rust uses raw bytes")
+        env = self.locale_env("C", {"us-ascii", "ansi_x3.4-1968"})
+        self.write(record())
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            remote = Path(directory) / "caf\u00e9.git"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)],
+                           check=True)
+            subprocess.run(["git", "remote", "add", "origin", str(remote)],
+                           cwd=self.repo, check=True)
+            result = subprocess.run(cli_argv("publish"), cwd=self.repo, env=env,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0,
+                             msg=result.stdout + result.stderr)
+            report = json.loads(result.stdout)
+            self.assertTrue(report["published_remote"])
+            self.assertTrue(report["read_back_matches"])
+            published = subprocess.run(
+                ["git", "ls-remote", str(remote), "refs/pecia/log"],
+                cwd=self.repo, capture_output=True, text=True, check=True)
+            self.assertTrue(published.stdout.strip())
+
+    def test_ledger_path_argument_keeps_original_bytes_under_ascii_locale(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python argv decoding; Rust has its own path handling")
+        env = self.locale_env("C", {"us-ascii", "ansi_x3.4-1968"})
+        self.write(record())
+        target = self.repo / "caf\u00e9.jsonl"
+        target.write_bytes(self.ledger.read_bytes())
+        result = subprocess.run(cli_argv("check", "--ledger", str(target)),
+                                cwd=self.repo, env=env, capture_output=True,
+                                text=True, check=False)
+        self.assertEqual(result.returncode, 0,
+                         msg=result.stdout + result.stderr)
+
+    def test_default_owner_from_utf8_environment_under_ascii_locale(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python environment decoding; Rust uses UTF-8")
+        env = self.locale_env("C", {"us-ascii", "ansi_x3.4-1968"})
+        env["PECIA_OWNER"] = "Zo\u00eb"
+        result = subprocess.run(
+            cli_argv("add", "--type", "task", "--title", "owner probe"),
+            cwd=self.repo, env=env, capture_output=True, text=True,
+            check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn('"owner":"Zo\u00eb"'.encode("utf-8"),
+                      self.log.read_bytes())
+
+    def test_unicode_remote_name_under_ascii_locale_round_trips(self) -> None:
+        if not CLI_IS_PYTHON:
+            self.skipTest("Python argv and Git output decoding")
+        env = self.locale_env("C", {"us-ascii", "ansi_x3.4-1968"})
+        self.write(record())
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            remote = Path(directory) / "remote.git"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)],
+                           check=True)
+            subprocess.run(["git", "remote", "add", "caf\u00e9", str(remote)],
+                           cwd=self.repo, check=True)
+            result = subprocess.run(
+                cli_argv("publish", "--remote", "caf\u00e9"),
+                cwd=self.repo, env=env, capture_output=True, text=True,
+                check=False)
+            self.assertEqual(result.returncode, 0,
+                             msg=result.stdout + result.stderr)
+            report = json.loads(result.stdout)
+            self.assertTrue(report["published_remote"])
+            self.assertTrue(report["read_back_matches"])
+
+    def test_init_preserves_non_utf8_user_git_files(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            attrs = root / ".gitattributes"
+            ignore = root / ".gitignore"
+            attrs.write_bytes(
+                b"# legacy \xff\n"
+                b".pecia/work.jsonl\vmerge=union\n"
+                b".pecia/work.jsonl\fmerge=union\n"
+                b".pecia/work.jsonl text merge=union\r\n")
+            ignore.write_bytes(b"*.caf\xe9")
+            result = subprocess.run(cli_argv("init"), cwd=root,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0,
+                             msg=result.stdout + result.stderr)
+            self.assertEqual(
+                attrs.read_bytes(),
+                b"# legacy \xff\n"
+                b".pecia/work.jsonl\vmerge=union\n"
+                b".pecia/work.jsonl\fmerge=union\n"
+                b".pecia/work.jsonl text\r\n")
+            self.assertEqual(ignore.read_bytes(), b"*.caf\xe9\n.pecia/.lock\n")
+            ignored = subprocess.run(
+                ["git", "check-ignore", "-q", "--", ".pecia/.lock"],
+                cwd=root, check=False)
+            self.assertEqual(ignored.returncode, 0)
+
+    def test_init_keeps_unrelated_attribute_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            attrs = root / ".gitattributes"
+            original = b"a\rb merge=union\nother text\r\n"
+            attrs.write_bytes(original)
+            result = subprocess.run(cli_argv("init"), cwd=root,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0,
+                             msg=result.stdout + result.stderr)
+            self.assertEqual(attrs.read_bytes(), original)
+            for name, expected in (("a", "union"), ("b", "unspecified")):
+                actual = subprocess.run(
+                    ["git", "check-attr", "merge", "--", name],
+                    cwd=root, capture_output=True, text=True, check=True)
+                self.assertEqual(actual.stdout.strip(), f"{name}: merge: {expected}")
+
+    def test_init_removing_final_legacy_attribute_keeps_prior_newline(self) -> None:
+        cases = (
+            (b"foo\r\n.pecia/work.jsonl merge=union", b"foo\r\n"),
+            (b"foo\n# pecia v1\n.pecia/work.jsonl merge=union", b"foo\n"),
+        )
+        for original, expected in cases:
+            with self.subTest(original=original):
+                with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+                    root = Path(directory)
+                    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+                    attrs = root / ".gitattributes"
+                    attrs.write_bytes(original)
+                    result = subprocess.run(cli_argv("init"), cwd=root,
+                                            capture_output=True, text=True,
+                                            check=False)
+                    self.assertEqual(result.returncode, 0,
+                                     msg=result.stdout + result.stderr)
+                    self.assertEqual(attrs.read_bytes(), expected)
 
 if __name__ == "__main__":
     unittest.main()

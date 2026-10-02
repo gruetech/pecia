@@ -61,10 +61,10 @@ def _resolve_root() -> Path:
     paths serve."""
     try:
         proc = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                              capture_output=True, text=True, check=False)
+                              capture_output=True, check=False)
     except (FileNotFoundError, OSError):
         return Path.cwd().resolve()
-    out = proc.stdout.strip()
+    out = os.fsdecode(proc.stdout).strip()
     if proc.returncode == 0 and out:
         return Path(out).resolve()
     return Path.cwd().resolve()
@@ -1114,8 +1114,9 @@ def append_record(rec: dict[str, Any]) -> None:
     with _staged_mark(entries + [entry], target) as (commit_mark, problem):
         if problem:
             raise RuntimeError(f"write refused: {problem}")
-        with target.open("a") as fh:
-            fh.write(canonical(entry) + "\n")
+        line = (canonical(entry) + "\n").encode("utf-8")
+        with target.open("ab") as fh:
+            fh.write(line)
             # Durable before the mark moves to it (pc-26a08d9c5d46); the
             # mark's commit then syncs the directory both live in.
             fh.flush()
@@ -1609,7 +1610,7 @@ def _staged_log(entries: list[dict[str, Any]], near: Path):
     near.parent.mkdir(parents=True, exist_ok=True)
     tmp = near.with_name(f".{near.name}.staged.{os.getpid()}")
     try:
-        tmp.write_text("".join(canonical(e) + "\n" for e in entries))
+        tmp.write_bytes("".join(canonical(e) + "\n" for e in entries).encode("utf-8"))
         parsed, findings = read_log(tmp)
         yield tmp, parsed, findings
     finally:
@@ -1659,7 +1660,7 @@ def _staged_snapshot(entries: list[dict[str, Any]]):
             snapshot_dir().mkdir(parents=True, exist_ok=True)
             for dest, text in ((snapshot_path(), body), (snapshot_head_path(), head)):
                 tmp = dest.with_name(f".{dest.name}.staged.{os.getpid()}")
-                tmp.write_text(text)
+                tmp.write_bytes(text.encode("utf-8"))
                 staged.append((tmp, dest))
         except OSError as exc:
             problem = (f"the projection cannot be written: {type(exc).__name__}: "
@@ -2480,7 +2481,8 @@ def mint_id(record_type: str, title: str, created: str, existing: set[str]) -> s
 
 
 def default_owner() -> str:
-    return os.environ.get("PECIA_OWNER") or getpass.getuser()
+    raw = os.environ.get("PECIA_OWNER") or getpass.getuser()
+    return os.fsencode(raw).decode("utf-8", errors="surrogateescape")
 
 
 def provenance_anchor() -> dict[str, Any]:
@@ -4351,10 +4353,10 @@ def cmd_init(args: argparse.Namespace) -> int:
             f"migrate` to rebuild one from this repo's history")
     PECIA_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_PATH.exists():
-        CONFIG_PATH.write_text(
+        CONFIG_PATH.write_bytes((
             "# pecia config — flat keys only. Core vocabulary may be extended, not redefined.\n"
             "# extra_statuses: []\n# extra_types: []\n# planned: []\n"
-            "stale_days: 7\nrot_days: 14\n")
+            "stale_days: 7\nrot_days: 14\n").encode("utf-8"))
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
         target.write_text("")
@@ -4378,29 +4380,40 @@ def cmd_init(args: argparse.Namespace) -> int:
     # is rewritten without the token, its comments untouched.
     gitattributes = ROOT / ".gitattributes"
     if gitattributes.exists():
-        kept: list[str] = []
-        for ln in gitattributes.read_text().splitlines():
-            bare = ln.strip()
-            if bare and not bare.startswith("#"):
-                pattern, *attributes = bare.split()
-                if (pattern in (".pecia/work.jsonl", "work.jsonl")
-                        and "merge=union" in attributes):
-                    remaining = [a for a in attributes if a != "merge=union"]
+        # Attribute patterns and tokens are ASCII. Keep every other byte in
+        # the adopter's file while removing an old merge=union declaration.
+        kept: list[bytes] = []
+        changed = False
+        source_lines = git_attribute_lines(gitattributes.read_bytes())
+        dropped_final_line = False
+        for index, ln in enumerate(source_lines):
+            bare = ln.strip(b" \t\r")
+            if bare and not bare.startswith(b"#"):
+                pattern, *attributes = re.split(rb"[ \t\r]+", bare)
+                if (pattern in (b".pecia/work.jsonl", b"work.jsonl")
+                        and b"merge=union" in attributes):
+                    changed = True
+                    remaining = [a for a in attributes if a != b"merge=union"]
                     if remaining:
-                        kept.append(" ".join([pattern, *remaining]))
+                        ending = b"\r" if ln.endswith(b"\r") else b""
+                        kept.append(b" ".join([pattern, *remaining]) + ending)
                         continue
                     # pc-80f4: stripping the declaration and keeping the
                     # comment block above it left half a fix — the
                     # contiguous comment lines directly above go with it,
                     # plus at most one blank separator; a comment block
                     # about something else is fenced off by its own blank.
-                    while kept and kept[-1].lstrip().startswith("#"):
+                    while kept and kept[-1].lstrip(b" \t\r").startswith(b"#"):
                         kept.pop()
-                    if kept and not kept[-1].strip():
+                    if kept and not kept[-1].strip(b" \t\r"):
                         kept.pop()
+                    dropped_final_line = index == len(source_lines) - 1
                     continue
             kept.append(ln)
-        gitattributes.write_text("".join(ln + "\n" for ln in kept))
+        if changed:
+            if dropped_final_line and kept:
+                kept.append(b"")
+            gitattributes.write_bytes(b"\n".join(kept))
     # The write lock is machine-local runtime state, never content. Unignored
     # it shows up as untracked worktree noise in every adopting repo forever —
     # and pecia's own hook reports worktree activity, so the noise trains the
@@ -4409,7 +4422,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     # was never the thing that had to get it right (found dogfooding, M3).
     gitignore = ROOT / ".gitignore"
     ignore = ".pecia/.lock"
-    existing = gitignore.read_text() if gitignore.exists() else ""
+    existing = gitignore.read_bytes() if gitignore.exists() else b""
     # THE APPENDER ASKS THE DETECTOR'S QUESTION (pc-4c7d, same commit as
     # the detector): the exact-line test skipped the append when the line
     # was present but NEGATED below (`!.pecia/.lock`), so init exited 0
@@ -4417,10 +4430,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     # Appending at the end wins git's last-match rule, so re-running init
     # is again the remedy D005 names.
     if not lock_is_ignored():
-        with gitignore.open("a") as fh:
-            if existing and not existing.endswith("\n"):
-                fh.write("\n")
-            fh.write(f"{ignore}\n")
+        with gitignore.open("ab") as fh:
+            if existing and not existing.endswith(b"\n"):
+                fh.write(b"\n")
+            fh.write(f"{ignore}\n".encode("ascii"))
     # THE REPORT NAMES THE INITIALIZED STORE (v2.8, pc-a296): under
     # PECIA_LOG_DIR the log and snapshot land in the pinned store, and this
     # line said `<repo>/.pecia` for every store — two different stores
@@ -4453,11 +4466,16 @@ HOOK_DIRS = ["dev/hooks", ".githooks", "githooks"]
 def git_out(*args: str) -> str | None:
     """Run git; return stripped stdout, or None if git failed or is absent."""
     try:
-        proc = subprocess.run(["git", *args], cwd=str(ROOT), text=True,
+        proc = subprocess.run(["git", *args], cwd=str(ROOT),
                               capture_output=True, check=False)
     except (FileNotFoundError, OSError):
         return None
-    return proc.stdout.strip() if proc.returncode == 0 else None
+    return os.fsdecode(proc.stdout).strip() if proc.returncode == 0 else None
+
+
+def git_attribute_lines(data: bytes) -> list[bytes]:
+    """Split at LF only; retain bare CR, CRLF endings, VT and FF bytes."""
+    return data.split(b"\n")
 
 
 def merge_union_declared(attrs: Path) -> bool:
@@ -4485,13 +4503,13 @@ def merge_union_declared(attrs: Path) -> bool:
         return out.rsplit(":", 1)[-1].strip() == "union"
     if not attrs.exists():
         return False
-    for line in attrs.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    for line in git_attribute_lines(attrs.read_bytes()):
+        line = line.strip(b" \t\r")
+        if not line or line.startswith(b"#"):
             continue
-        pattern, *attributes = line.split()
-        if pattern in (".pecia/work.jsonl", "work.jsonl") \
-                and "merge=union" in attributes:
+        pattern, *attributes = re.split(rb"[ \t\r]+", line)
+        if pattern in (b".pecia/work.jsonl", b"work.jsonl") \
+                and b"merge=union" in attributes:
             return True
     return False
 
@@ -4518,8 +4536,9 @@ def lock_is_ignored() -> bool:
     if proc is not None and proc.returncode in (0, 1):
         return proc.returncode == 0
     gitignore = ROOT / ".gitignore"
-    return gitignore.exists() and \
-        ".pecia/.lock" in gitignore.read_text().splitlines()
+    return gitignore.exists() and any(
+        line.removesuffix(b"\r") == b".pecia/.lock"
+        for line in gitignore.read_bytes().split(b"\n"))
 
 
 def path_is_inside(candidate: Path, root: Path) -> bool:
@@ -7186,11 +7205,15 @@ def cmd_board(args: argparse.Namespace) -> int:
 PECIA_REF = "refs/pecia/log"
 
 
-def git_run(*args: str, stdin: str | None = None) -> tuple[int, str, str]:
+def git_run(*args: str, stdin: str | bytes | None = None) -> tuple[int, str, str]:
     try:
-        done = subprocess.run(["git", *args], cwd=str(ROOT), text=True,
-                              input=stdin, capture_output=True, timeout=60)
-        return done.returncode, done.stdout.strip(), done.stderr.strip()
+        payload = stdin.encode("utf-8") if isinstance(stdin, str) else stdin
+        done = subprocess.run(["git", *args], cwd=str(ROOT),
+                              input=payload, capture_output=True, timeout=60)
+        # Git prints paths and remote names as bytes. fsdecode preserves their
+        # identity when a caller passes one back to Git under a legacy locale.
+        return (done.returncode, os.fsdecode(done.stdout).strip(),
+                done.stderr.decode("utf-8", errors="replace").strip())
     except (OSError, subprocess.SubprocessError) as exc:
         return 1, "", str(exc)
 
@@ -7578,7 +7601,7 @@ def cmd_publish(args: argparse.Namespace) -> int:
         return cannot_run(f"refusing to publish an unclean timeline: {bad[0]['message']}")
 
     log_text = log_bytes.decode("utf-8")  # a clean read_log accepted every line
-    code, blob, err = git_run("hash-object", "-w", "--stdin", stdin=log_text)
+    code, blob, err = git_run("hash-object", "-w", "--stdin", stdin=log_bytes)
     if code != 0:
         return cannot_run(f"could not write the log blob: {err}")
     code, tree, err = git_run("mktree", stdin=f"100644 blob {blob}\tlog.jsonl\n")
@@ -8605,7 +8628,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    # On POSIX, Python decodes argv with the process locale. The CLI format is
+    # UTF-8; recover the original argument bytes before interpreting values.
+    argv = [os.fsencode(arg).decode("utf-8", errors="surrogateescape")
+            for arg in sys.argv[1:]]
+    args = build_parser().parse_args(argv)
+    # Paths and Git remote names are OS objects, not record text. Restore the
+    # filesystem-decoded form so Path and subprocess pass the original bytes
+    # back to the OS under a legacy locale.
+    for name in ("ledger", "config", "remote"):
+        value = getattr(args, name, None)
+        if isinstance(value, str):
+            setattr(args, name, os.fsdecode(value.encode("utf-8", "surrogateescape")))
     OUTPUT["json"] = (bool(getattr(args, "json", False))
                       or getattr(args, "format", None) == "json")
     OUTPUT["command"] = args.command

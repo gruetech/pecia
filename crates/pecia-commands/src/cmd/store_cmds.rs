@@ -3,7 +3,6 @@
 use crate::args::Parsed;
 use crate::ctx::{finding_value, obj, s, Ctx, RULE1};
 use pecia_core::check::{Entries, has_error, log_head_hash, mark_text, mark_violation, projection_body, read_log, snapshot_truncation_witness, timeline_checks, SnapshotFiles, MARK_REMEDY};
-use pecia_core::config::py_splitlines;
 use pecia_core::finding::{error, Code, Finding};
 use pecia_core::index::Identity;
 use pecia_core::Value;
@@ -170,6 +169,45 @@ pub fn snapshot(ctx: &Ctx, _args: &Parsed) -> Result<u8, String> {
 
 const DEFAULT_CONFIG: &str = "# pecia config — flat keys only. Core vocabulary may be extended, not redefined.\n# extra_statuses: []\n# extra_types: []\n# planned: []\nstale_days: 7\nrot_days: 14\n";
 
+fn byte_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    bytes.split(|b| *b == b'\n')
+}
+
+fn is_git_attribute_space(byte: &u8) -> bool {
+    matches!(*byte, b' ' | b'\t' | b'\r' | b'\n')
+}
+
+fn trim_git_attribute_space(bytes: &[u8]) -> &[u8] {
+    let start = bytes.iter().position(|b| !is_git_attribute_space(b)).unwrap_or(bytes.len());
+    let end = bytes.iter().rposition(|b| !is_git_attribute_space(b)).map_or(start, |i| i + 1);
+    &bytes[start..end]
+}
+
+fn legacy_union_line(line: &[u8]) -> Option<(&[u8], Vec<&[u8]>)> {
+    let bare = trim_git_attribute_space(line);
+    if bare.is_empty() || bare.starts_with(b"#") {
+        return None;
+    }
+    let mut parts = bare.split(is_git_attribute_space).filter(|part| !part.is_empty());
+    let pattern = parts.next()?;
+    let attributes: Vec<&[u8]> = parts.collect();
+    if (pattern == b".pecia/work.jsonl" || pattern == b"work.jsonl")
+        && attributes.contains(&(b"merge=union" as &[u8])) {
+        Some((pattern, attributes))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn legacy_union_declared_in_bytes(bytes: &[u8]) -> bool {
+    byte_lines(bytes).any(|line| legacy_union_line(line).is_some())
+}
+
+fn gitignore_lists_lock(bytes: &[u8]) -> bool {
+    bytes.split(|b| *b == b'\n')
+        .any(|line| line.strip_suffix(b"\r").unwrap_or(line) == b".pecia/.lock")
+}
+
 /// Whether git ignores the lock — ASKED OF GIT (pc-4c7d), which composes every
 /// pattern, negation and exclude file; only when git cannot answer does the
 /// exact-line test stand in.
@@ -177,8 +215,8 @@ pub fn lock_is_ignored(ctx: &Ctx) -> bool {
     match pecia_store::git::code(&ctx.store.root, &["check-ignore", "-q", "--", ".pecia/.lock"]) {
         Some(0) => true,
         Some(1) => false,
-        _ => std::fs::read_to_string(ctx.store.root.join(".gitignore"))
-            .map(|t| py_splitlines(&t).contains(&".pecia/.lock"))
+        _ => std::fs::read(ctx.store.root.join(".gitignore"))
+            .map(|bytes| gitignore_lists_lock(&bytes))
             .unwrap_or(false),
     }
 }
@@ -239,38 +277,58 @@ pub fn init(ctx: &Ctx, _args: &Parsed) -> Result<u8, String> {
     // projection is regenerated, never merged, and the attribute would make
     // git merge two projections line by line into one no log produced.
     let attrs = store.root.join(".gitattributes");
-    if let Ok(text) = std::fs::read_to_string(&attrs) {
-        let mut kept: Vec<String> = Vec::new();
-        for ln in py_splitlines(&text) {
-            let bare = ln.trim();
-            if !bare.is_empty() && !bare.starts_with('#') {
-                let mut parts = bare.split_whitespace();
-                let pattern = parts.next().unwrap_or("");
-                let attributes: Vec<&str> = parts.collect();
-                if (pattern == ".pecia/work.jsonl" || pattern == "work.jsonl") && attributes.contains(&"merge=union") {
-                    let remaining: Vec<&str> = attributes.into_iter().filter(|a| *a != "merge=union").collect();
-                    if !remaining.is_empty() {
-                        kept.push(std::iter::once(pattern).chain(remaining).collect::<Vec<_>>().join(" "));
-                        continue;
+    if let Ok(bytes) = std::fs::read(&attrs) {
+        let mut kept: Vec<Vec<u8>> = Vec::new();
+        let mut changed = false;
+        let lines: Vec<&[u8]> = byte_lines(&bytes).collect();
+        let mut dropped_final_line = false;
+        for (index, ln) in lines.iter().enumerate() {
+            if let Some((pattern, attributes)) = legacy_union_line(ln) {
+                changed = true;
+                let remaining: Vec<&[u8]> = attributes.into_iter()
+                    .filter(|a| *a != b"merge=union").collect();
+                if !remaining.is_empty() {
+                    let mut rewritten = pattern.to_vec();
+                    for attribute in remaining {
+                        rewritten.push(b' ');
+                        rewritten.extend_from_slice(attribute);
                     }
-                    while kept.last().is_some_and(|k| k.trim_start().starts_with('#')) {
-                        kept.pop();
+                    if ln.ends_with(b"\r") {
+                        rewritten.push(b'\r');
                     }
-                    if kept.last().is_some_and(|k| k.trim().is_empty()) {
-                        kept.pop();
-                    }
+                    kept.push(rewritten);
                     continue;
                 }
+                while kept.last().is_some_and(|k| trim_git_attribute_space(k).starts_with(b"#")) {
+                    kept.pop();
+                }
+                if kept.last().is_some_and(|k| trim_git_attribute_space(k).is_empty()) {
+                    kept.pop();
+                }
+                dropped_final_line = index == lines.len() - 1;
+                continue;
             }
-            kept.push(ln.to_string());
+            kept.push(ln.to_vec());
         }
-        std::fs::write(&attrs, kept.iter().map(|k| format!("{k}\n")).collect::<String>()).map_err(io)?;
+        if changed {
+            if dropped_final_line && !kept.is_empty() {
+                kept.push(Vec::new());
+            }
+            let mut rewritten = Vec::new();
+            for (index, line) in kept.iter().enumerate() {
+                if index > 0 {
+                    rewritten.push(b'\n');
+                }
+                rewritten.extend_from_slice(line);
+            }
+            std::fs::write(&attrs, rewritten).map_err(io)?;
+        }
     }
     if !lock_is_ignored(ctx) {
         let gi = store.root.join(".gitignore");
-        let existing = std::fs::read_to_string(&gi).unwrap_or_default();
+        let existing = std::fs::read(&gi).unwrap_or_default();
         let mut add = String::new();
-        if !existing.is_empty() && !existing.ends_with('\n') {
+        if !existing.is_empty() && !existing.ends_with(b"\n") {
             add.push('\n');
         }
         add.push_str(".pecia/.lock\n");
@@ -293,6 +351,24 @@ mod tests {
     //! shows the same writer does write.
     use super::*;
     use pecia_store::Store;
+
+    #[test]
+    fn lock_fallback_reads_non_utf8_gitignore_lines() {
+        assert!(gitignore_lists_lock(b"*.caf\xe9\r\n.pecia/.lock\r\n"));
+        assert!(!gitignore_lists_lock(b"*.caf\xe9.pecia/.lock\n"));
+        assert!(!gitignore_lists_lock(b"*.caf\xe9\r.pecia/.lock\n"));
+        assert!(!gitignore_lists_lock(b".pecia/.lock\r\r\n"));
+    }
+
+    #[test]
+    fn union_attribute_parser_handles_non_utf8_neighbors() {
+        assert!(legacy_union_declared_in_bytes(
+            b"# legacy \xff\n.pecia/work.jsonl text merge=union\n"));
+        assert!(!legacy_union_declared_in_bytes(
+            b".pecia/work.jsonl\x0bmerge=union\n.pecia/work.jsonl\x0cmerge=union\n"));
+        assert!(legacy_union_declared_in_bytes(
+            b".pecia/work.jsonl\rmerge=union\n"));
+    }
 
     fn repo(tag: &str) -> Ctx {
         let root = std::env::temp_dir().join(format!("pecia-writer-{tag}-{}", std::process::id()));

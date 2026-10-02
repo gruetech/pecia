@@ -3946,6 +3946,10 @@ this amendment, both implementations checked one read of the local log and
 then reread the live file for the blob; a controlled append of an invalid
 line between those operations produced a published blob the checker had
 never accepted.
+The Git blob input is those captured bytes, without a text-mode subprocess
+round trip through the process locale. A non-UTF-8 locale must not change a
+valid UTF-8 log during publication (reviewed 2026-10-01, defect
+`pc-e4efcf879ccc`).
 
 ### E008 names missing intervals (defect `pc-693cc656803b`)
 

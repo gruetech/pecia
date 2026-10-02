@@ -11,26 +11,29 @@ claims:
   notes: Public tree at the 2026-09-26 source candidate; reverify at the
     release commit.
 - id: reference-implementation
-  claim: The Python CLI passes the retained public behavioral suite at the
-    source candidate.
+  claim: The Python CLI passes the retained public behavioral suite on the
+    2026-10-02 local candidate tree.
   tier: tested
   evidence: uv run --python 3.12 --script dev/test-runner.py -j 4
-  verified: '2026-09-26'
+  verified: '2026-10-02'
   kill: The suite includes E-code violation cases and a null scramble arm.
-  notes: 'Final curated public candidate: 1,252 discovered, 11 skipped, green on
-    Python 3.12. Reverify at the release commit.'
+  notes: 'The final local candidate ran 1,269 tests on Python 3.12, with 11 skips
+    and an OK result. This is local tree evidence; exact-public-SHA CI is a separate
+    run.'
 - id: rust-parity
-  claim: The Rust CLI is driven by the same public behavioral suite as the
-    Python CLI, with documented implementation-specific skips.
+  claim: The release-profile Rust CLI passes the same retained public
+    behavioral suite on the 2026-10-02 local candidate tree, with documented
+    implementation-specific skips.
   tier: tested
   evidence: PECIA_TEST_CLI=target/release/pecia uv run --python 3.12 --script
     dev/test-runner.py -j 4
-  verified: '2026-09-26'
+  verified: '2026-10-02'
   kill: Shared subprocess assertions exercise both CLIs; Rust internal tests
     cover separate implementation arms.
-  notes: 'Final curated public candidate: 1,252 discovered, 89 skipped, green against
-    the built Rust CLI. Rust internal tests passed separately. Reverify at the release
-    commit.'
+  notes: 'The final local candidate ran 1,269 shared tests against the release Rust
+    CLI, with 101 skips and an OK result. cargo test --locked also passed. The skips
+    include Python-only implementation arms; they are not Rust passes. Exact-public-SHA
+    CI is a separate run.'
 - id: v2-storage
   claim: The CLI uses a local append-only log, published through
     refs/pecia/log, with compare-and-swap checks and a generated reviewable
@@ -311,19 +314,24 @@ claims:
 - id: publish-validated-generation
   claim: Publish constructs its local Git blob and checks the published prefix
     from the same captured log bytes that passed parse and timeline
-    validation; a later concurrent append is excluded from that publication.
+    validation; a later concurrent append is excluded. The Python arm retains
+    those bytes under the tested non-UTF-8 locale settings; Rust sends raw
+    bytes and has no locale test arm.
   tier: tested
-  evidence: 'Python: tests.test_pecia.PublishUsesValidatedBytes under the shared
-    suite; Rust: cargo test -p pecia-commands --locked publish_uses_the_bytes_it_validated_even_after_an_append.'
-  verified: '2026-09-30'
-  kill: On the pre-fix Python implementation, the controlled after-validation
-    append produced a published blob containing not-json while cmd_publish
-    exited 0. The fixed Python and Rust arms append at that boundary and
-    require the published blob to equal the validated bytes.
-  notes: 'Defect pc-2f9f89d79f67 in the development archive. The public code was
-    tested in an isolated clone on 2026-09-30. Practice Catalog v3.4 GP8, VP4 and
-    BP4: compare the Git blob to captured bytes; exit 0 alone does not prove the
-    publication claim.'
+  evidence: '2026-10-01 local macOS Python 3.12: python3.12 -m unittest tests.test_pecia.PublishUsesValidatedBytes
+    (controlled append, C locale with PYTHONUTF8=0, ISO-8859-1 with PYTHONUTF8=0);
+    Rust: cargo test --locked -p pecia-commands publish_uses_the_bytes_it_validated_even_after_an_append.'
+  verified: '2026-10-01'
+  kill: Before repair, a controlled append entered the published blob. With
+    Python UTF-8 mode disabled (PYTHONUTF8=0), the C-locale arm refused a
+    valid UTF-8 title with UnicodeEncodeError; ISO-8859-1 returned success but
+    published E9 where the validated log held C3 A9. Fixed tests compare the
+    Git blob with captured bytes.
+  notes: 'Independent Claude Opus 5.5 high review uncovered the Python locale defect
+    and drove byte-equality regressions. Development archive defects pc-2f9f89d79f67
+    and pc-e4efcf879ccc. The Rust arm verifies captured-byte equality but does not
+    set a legacy locale. Practice Catalog v3.4 GP8, VP4 and BP4: compare bytes;
+    exit 0 alone is not truth.'
 - id: e008-bounded-gaps
   claim: E008 reports maximal missing revision intervals per id rather than
     enumerating absent revision numbers; constructing the diagnostic scales
@@ -340,3 +348,73 @@ claims:
   notes: Defect pc-693cc656803b in the development archive. This is a finite
     regression guard, not a general scale benchmark. Practice Catalog v3.4
     GP8, VP4, VP5 and VP12.
+- id: python-utf8-storage-locale
+  claim: Under tested C locale with PYTHONUTF8=0 and ISO-8859-1 settings, the
+    one-file Python CLI writes UTF-8 bytes for log appends, generated
+    snapshots and fresh init config. A Linux C-locale probe verifies UTF-8
+    record-text arguments; macOS decodes argv as UTF-8 natively.
+  tier: tested
+  evidence: '2026-10-01 local macOS Python 3.12 and 3.14: python -m unittest tests.test_pecia.LocaleIndependentStorage
+    with PYTHONUTF8=0 for C and ISO-8859-1 arms; persisted bytes and Git metadata
+    compared. Local Ubuntu Python 3.12 C locale with PYTHONUTF8=0: baseline add
+    exit 1, repaired add exit 0 with UTF-8 title; Unicode ledger path, remote name
+    and owner probes passed.'
+  verified: '2026-10-01'
+  kill: Before repair, C locale with PYTHONUTF8=0 caused add, snapshot and
+    fresh init to refuse non-ASCII data; ISO-8859-1 with PYTHONUTF8=0 let
+    snapshot write E9 rather than C3 A9. A Unicode checkout path and
+    invalid-UTF-8 adopter Git metadata also failed. Focused tests and local
+    Linux probes passed after repair.
+  notes: Development archive defects pc-c97f5a96fe31, pc-e9319f771b36,
+    pc-5c97afbb4b8e and pc-a49fdb9d0fd6. The macOS argv path was already
+    UTF-8; the Linux C-locale probe specifically exercises argument recovery.
+    The independent Claude Opus 5.5 high review drove the red cases. Practice
+    Catalog v3.4 GP8, VP4 and VP5.
+- id: rust-nonutf8-gitignore-init
+  claim: Rust init preserves an adopter .gitignore containing invalid UTF-8
+    bytes and puts the .pecia/.lock rule on its own line; its fallback detects
+    the exact rule in raw bytes.
+  tier: tested
+  evidence: '2026-10-01: PECIA_TEST_CLI=<release Rust binary> python3.12 -m unittest
+    tests.test_pecia.LocaleIndependentStorage.test_init_preserves_non_utf8_user_git_files
+    passed. cargo test --locked -p pecia-commands lock_fallback_reads_non_utf8_gitignore_lines
+    passed. Local pre-fix 05cba86 Rust release CLI and repaired CLI were probed
+    in separate Git repositories with the same invalid-UTF-8 .gitignore bytes.'
+  verified: '2026-10-02'
+  kill: Before repair, the 05cba86 Rust CLI exited 0 but appended .pecia/.lock
+    to the last non-UTF-8 pattern without a separating newline; git
+    check-ignore returned false. The repaired CLI preserved the original
+    bytes, inserted a newline, and git check-ignore returned true. The pure
+    fallback test rejects a glued line and accepts an exact line.
+  notes: Independent Claude Opus 5.5 high review identified the missing
+    evidence and a fallback test that could miss its target. The fallback test
+    now calls the byte parser directly. Scope is init and the exact-line
+    fallback, not all possible Git ignore patterns. Practice Catalog v3.4 GP8,
+    VP4 and VP5.
+- id: init-gitattributes-lf-only
+  claim: In the shared tested cases, Python and Rust init use LF-only parsing
+    for .gitattributes. A file without a literal pecia merge=union line stays
+    byte-identical in the CRLF and bare-CR fixture. When merge=union is
+    stripped from a literal legacy line that retains a text attribute, tested
+    unrelated lines containing non-UTF-8, vertical-tab and form-feed bytes
+    survive. Removing a whole final legacy line preserves the preceding
+    newline.
+  tier: tested
+  evidence: 'Python: python3.12 -m unittest tests.test_pecia.LocaleIndependentStorage.
+    Rust: PECIA_TEST_CLI="$PWD/target/release/pecia" python3.12 -m unittest tests.test_pecia.LocaleIndependentStorage.
+    The shared class includes test_init_preserves_non_utf8_user_git_files, test_init_keeps_unrelated_attribute_line_endings
+    and test_init_removing_final_legacy_attribute_keeps_prior_newline. Rust unit:
+    cargo test --locked -p pecia-commands union_attribute_parser_handles_non_utf8_neighbors.
+    Local 05cba86 Python and Rust CLI probes compared bytes and git check-attr answers.'
+  verified: '2026-10-02'
+  kill: 'Before repair, both 05cba86 CLIs exited 0 on a .gitattributes file with
+    a bare CR in a non-pecia line but rewrote a\rb merge=union into two LF lines.
+    Git check-attr changed from a: union and b: unspecified to a: unspecified and
+    b: union. The repaired shared case requires unchanged bytes and unchanged Git
+    interpretation.'
+  notes: Matched legacy lines with other attributes are normalized to single
+    spaces. A fully removed legacy line also takes its immediately preceding
+    comment block and one blank separator; those lines are outside this
+    byte-preservation claim. The no-Git Python detector fallback is
+    byte-parsed but not independently exercised. Practice Catalog v3.4 GP8,
+    VP4 and VP5.

@@ -353,16 +353,9 @@ fn merge_union_declared(ctx: &Ctx) -> bool {
     if let Some(out) = git::out(&ctx.store.root, &["check-attr", "merge", "--", ".pecia/work.jsonl"]) {
         return out.rsplit(':').next().unwrap_or("").trim() == "union";
     }
-    let Ok(text) = std::fs::read_to_string(ctx.store.root.join(".gitattributes")) else { return false };
-    py_splitlines(&text).into_iter().any(|line| {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            return false;
-        }
-        let mut parts = line.split_whitespace();
-        let pattern = parts.next().unwrap_or("");
-        (pattern == ".pecia/work.jsonl" || pattern == "work.jsonl") && parts.any(|a| a == "merge=union")
-    })
+    std::fs::read(ctx.store.root.join(".gitattributes"))
+        .map(|bytes| super::store_cmds::legacy_union_declared_in_bytes(&bytes))
+        .unwrap_or(false)
 }
 
 struct Report {

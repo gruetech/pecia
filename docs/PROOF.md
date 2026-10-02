@@ -9,10 +9,12 @@ lets one set of behavior assertions run against both executables.
 The public repository began at commit `223ec84`, curated from private source
 commit `0ddbf9f26eaaf429a02da8bce12c51fb3cd17f2e`. Historical research
 and process-only tests were removed. The table below records local arm64
-macOS observations from 2026-09-26. Public workflow results must be read at
-the exact commit: [CI at `cd80560`](https://github.com/gruetech/pecia/actions/runs/36491147659)
+macOS observations from 2026-09-26. Public workflow results belong to exact
+commits: [CI at `cd80560`](https://github.com/gruetech/pecia/actions/runs/36491147659)
 and [x86-64 at `cd80560`](https://github.com/gruetech/pecia/actions/runs/36491147653)
-both passed on 2026-09-28. Later commits require their own runs.
+passed on 2026-09-28; [CI at `05cba86`](https://github.com/gruetech/pecia/actions/runs/36812156794)
+and [x86-64 at `05cba86`](https://github.com/gruetech/pecia/actions/runs/36812156791)
+also passed. Later commits require their own runs.
 
 | Run | Result | Scope |
 | --- | --- | --- |
@@ -44,7 +46,7 @@ A hard-launch claim requires complete CI on the chosen exact release SHA
 and a fresh-clone first-use check on its final executable. The local runs in
 this table do not supply that verdict for later executable changes.
 
-## 2026-09-30 local fix candidate
+## 2026-09-30 publication and sparse-gap fixes
 
 Two survey findings now have regression arms in both implementations.
 `publish` checks and publishes one captured generation of log bytes; the
@@ -54,9 +56,40 @@ revision intervals without expanding every absent integer; shared Python
 and Rust cases include a two-record gap ending at revision 1,000,000,000,000.
 In the curated public clone, the Python suite ran 1,255 tests (OK, 11
 skipped), the Rust workspace tests passed, and the focused E008 cases passed
-against the Rust CLI. These are local candidate results. Public CI and a
-fresh-clone check are still owed on the exact release SHA.
+against the Rust CLI. Both public workflows passed at the exact `05cba86`
+commit, linked above. A later executable needs its own evidence.
 <!-- claims: publish-validated-generation, e008-bounded-gaps -->
+
+## 2026-10-01 locale hardening
+
+An independent Claude Opus 5.5 high-effort review found that Python
+`publish` could change validated UTF-8 log bytes while handing them to Git
+under a non-UTF-8 locale with Python UTF-8 mode disabled. A C-locale run
+with `PYTHONUTF8=0` refused a valid title; an
+ISO-8859-1 run succeeded but wrote the wrong blob bytes. The same review
+found locale-dependent log and snapshot writers and Git metadata handling.
+The repair writes canonical UTF-8 bytes explicitly and preserves file-path
+and remote-name bytes when calling the operating system. Rust's `init`
+now puts the lock-ignore rule on a new line even when the adopter's
+`.gitignore` contains invalid UTF-8; its fallback line check reads bytes.
+
+The failing cases were reproduced before repair. On the reviewed candidate,
+the focused Python publish and locale classes passed on macOS Python 3.12;
+the locale class also passed on Python 3.14. A local Ubuntu Python 3.12
+C-locale probe with `PYTHONUTF8=0` passed with a UTF-8 title, owner, ledger path, repository
+path, and remote name. Rust's new invalid-UTF-8 `.gitignore` test passed.
+The shared invalid-UTF-8 adopter-file case passed explicitly against both
+CLIs. It checks that `merge=union` is stripped from a legacy line retaining
+`text` while unrelated bytes, including vertical tabs and form feeds,
+survive. Another shared case checks that `init` leaves unrelated CRLF and
+bare-CR attribute lines byte-identical. On `05cba86`, both CLIs rewrote
+such a line and changed Git's `merge` attribute answer for two unrelated
+paths; the repaired
+case preserves both answers. On the 2026-10-02 local candidate, the full
+shared suite passed 1,269 tests against Python (11 skipped) and 1,269
+against the release Rust CLI (101 skipped); `cargo test --locked` passed.
+Public CI and a fresh-clone check are still owed on the final exact SHA.
+<!-- claims: publish-validated-generation, python-utf8-storage-locale, rust-nonutf8-gitignore-init, init-gitattributes-lf-only, reference-implementation, rust-parity -->
 
 ## Scale regression
 
