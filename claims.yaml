@@ -17,9 +17,10 @@ claims:
   evidence: uv run --python 3.12 --script dev/test-runner.py -j 4
   verified: '2026-10-02'
   kill: The suite includes E-code violation cases and a null scramble arm.
-  notes: 'The final local candidate ran 1,269 tests on Python 3.12, with 11 skips
-    and an OK result. This is local tree evidence; exact-public-SHA CI is a separate
-    run.'
+  notes: 'The 2026-10-02 local candidate ran 1,269 tests on Python 3.12, with 11
+    skips and an OK result. The public ci workflow passed on exact df18859da4e9784242f82e895ad1657846727c6c
+    in GitHub Actions run 36963433678, including its Ubuntu Python behavioral suite
+    and Python 3.11, 3.13 and 3.14 smoke jobs.'
 - id: rust-parity
   claim: The release-profile Rust CLI passes the same retained public
     behavioral suite on the 2026-10-02 local candidate tree, with documented
@@ -30,10 +31,11 @@ claims:
   verified: '2026-10-02'
   kill: Shared subprocess assertions exercise both CLIs; Rust internal tests
     cover separate implementation arms.
-  notes: 'The final local candidate ran 1,269 shared tests against the release Rust
-    CLI, with 101 skips and an OK result. cargo test --locked also passed. The skips
-    include Python-only implementation arms; they are not Rust passes. Exact-public-SHA
-    CI is a separate run.'
+  notes: 'The 2026-10-02 local candidate ran 1,269 shared tests against the release
+    Rust CLI, with 101 skips and an OK result; the skips include Python-only arms
+    and are not Rust passes. The public x86-64 workflow on exact df18859da4e9784242f82e895ad1657846727c6c
+    passed cargo test --release --locked, the shared suite against the Rust binary,
+    and the 400,000-task regression in GitHub Actions run 36963433662.'
 - id: v2-storage
   claim: The CLI uses a local append-only log, published through
     refs/pecia/log, with compare-and-swap checks and a generated reviewable
@@ -74,11 +76,17 @@ claims:
     installed in a clone.
   tier: tested
   evidence: python3 -m unittest tests.test_adopter_template
-  verified: '2026-09-26'
+  verified: '2026-10-02'
   kill: Tests demonstrate bad staged input is rejected and valid input passes;
     doctor reports whether the hook is active locally.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
+  notes: The public df18859da4e9784242f82e895ad1657846727c6c source provided
+    templates/pre-commit. A README cargo install --git resolved to that
+    commit; the installed Rust CLI completed first use and a hook-mediated
+    scratch-repository commit after doctor reported an active gate. A one-file
+    Python copy and a local-path Rust install did the same in separate scratch
+    repositories. These are controlled maintainer first-use checks, not
+    independent adopter use. The retained negative and positive template tests
+    ran in exact-SHA CI run 36963433678.
 - id: board-projection
   claim: Board is a read-only human view over ledger state.
   tier: tested
@@ -91,22 +99,31 @@ claims:
   claim: The Rust CLI exposes its commands through a stdio MCP server.
   tier: tested
   evidence: cargo test --release -p pecia-mcp -p pecia
-  verified: '2026-09-26'
+  verified: '2026-10-02'
   kill: Tests exercise protocol replies and output boundaries.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
+  notes: From an anonymous clone of df18859da4e9784242f82e895ad1657846727c6c,
+    cargo install --path crates/pecia-cli --locked installed the release Rust
+    binary into a temporary root. In a separate scratch Git repository, it
+    completed init, Unicode add, snapshot, check and next. The installed
+    binary answered stdio MCP initialize and tools/list (18 tools); a next
+    tools/call returned structuredContent.exit=0 and isError=false. The x86-64
+    workflow on this exact SHA passed Rust release tests in run 36963433662.
+    This is a local first-use smoke, not independent adopter use.
 - id: stdlib-only
   claim: The adopter-facing Python CLI needs only Python 3.11 or newer and the
     standard library.
   tier: tested
   evidence: python3 -m unittest tests.test_pecia.TheCliIsStdlibOnly
-  verified: '2026-09-28'
+  verified: '2026-10-02'
   kill: The test checks imports and the isolated one-file invocation.
-  notes: One-file invocation passed in scratch adopter repos on Python 3.12. A
-    direct Python 3.14.7 import and ledger check also passed after escaping a
-    lone surrogate in a source docstring. Public CI smoke jobs for 3.11, 3.13,
-    and 3.14 passed at cd805609d09e5c5f424424e014c222c2b7a2c409; these are
-    import/check probes, not the full behavioral suite.
+  notes: The one-file CLI was copied from an anonymous clone of
+    df18859da4e9784242f82e895ad1657846727c6c into a separate scratch Git
+    repository. Python 3.12 completed init, Unicode add, snapshot, check and
+    next; the smoke script explicitly required C3 A9 bytes for the Unicode
+    title in .pecia/work.jsonl. The adopter hook was installed and doctor
+    reported an active gate before a hook-mediated commit. The exact-SHA ci
+    workflow passed 3.11, 3.13 and 3.14 import/check smoke jobs in run
+    36963433678; these are not full behavioral suites.
 - id: format-spec
   claim: The v2 format is documented and implemented; a clean composed-scope
     off-lineage review of a frozen public release remains open.
@@ -122,10 +139,15 @@ claims:
     scoped to the model and run.
   tier: asserted
   evidence: dev/alloy-gate.sh
-  verified: '2026-09-26'
-  kill: The public release has not yet rerun the formal gate.
-  notes: Public tree at the 2026-09-26 source candidate; reverify at the
-    release commit.
+  verified: '2026-10-02'
+  kill: The gate requires bounded theorem checks to pass and its trap and
+    seeded-kill checks to fail with counterexamples; a theorem failure,
+    passing trap or seed, or setup error makes the gate refuse. This does not
+    prove the full CLI or composed format.
+  notes: The public formal job in ci.yml ran dev/alloy-gate.sh and completed
+    successfully on df18859da4e9784242f82e895ad1657846727c6c (GitHub Actions
+    run 36963433678). The model and seeded traps remain bounded evidence; no
+    broader validation verdict follows.
 - id: dogfood
   claim: pecia was adopted for work in one sibling repository; two further
     exercises were one-shot imports, and pecia also tracks its own
@@ -142,15 +164,19 @@ claims:
     work from its first public commit.
   tier: tested
   evidence: python3 pecia_cli.py check && python3 pecia_cli.py next
-  verified: '2026-09-28'
-  kill: 'A fresh clone initially reported D009: no local timeline. Publishing the
-    chain to a temporary local bare remote and running sync hydrated the same six-entry
-    head before doctor and check passed.'
-  notes: Initial public candidate commit 223ec84 (2026-09-26) had a local
-    first-clone test. The six-entry log was later published and read back on
-    the public GitHub remote; an anonymous clone at
-    cd805609d09e5c5f424424e014c222c2b7a2c409 ran sync, doctor, check, and
-    next. This is not an outsider task trial.
+  verified: '2026-10-02'
+  kill: 'The original 2026-09-26 fresh-clone kill reported D009 without a local
+    timeline; publishing to a temporary bare remote and syncing hydrated six records.
+    At df18859 on 2026-10-02, an anonymous GitHub clone reported D009 plus D001;
+    doctor --fix enabled hooks and sync hydrated seven log entries (six issue IDs),
+    after which doctor/check passed.'
+  notes: Initial public source was checked in a local first clone; six records
+    were published and read back at cd80560. On 2026-10-02 an anonymous HTTPS
+    clone of df18859da4e9784242f82e895ad1657846727c6c first reported D001 and
+    D009. doctor --fix enabled hooks while refusing to erase the tracked
+    projection; sync hydrated seven log entries (six issue IDs). doctor and
+    check then passed, and next returned work. This is a controlled
+    first-clone check, not an outsider trial.
 - id: adapter-affordance
   claim: External adapters can produce the documented record format; bundled
     adapter examples are outside the core.
@@ -285,19 +311,22 @@ claims:
   notes: The category phrase names issue tracking; Git transport, record
     types, and CLI behavior are separately scoped in this register.
 - id: rust-scale-local
-  claim: In a local run, the Rust CLI completed check, next with limit 10, and
-    show on a generated timeline of 400,000 open tasks.
+  claim: In a 2026-09-27 local Apple Silicon run, and in the x86-64 CI
+    regression at df18859da4e9784242f82e895ad1657846727c6c, the Rust CLI
+    completed check, next with limit 10, and show on a generated timeline of
+    400,000 open tasks.
   tier: tested
   evidence: mise exec -- python dev/scale-regression.py --cli
     target/release/pecia --count 400000
-  verified: '2026-09-28'
+  verified: '2026-10-02'
   kill: The script asserts the checked record count, the first next result,
     and the last record read by show; a wrong exit or result fails the run.
-  notes: 'Local Apple Silicon run: fixture generation 73.28 s, check 3.46 s, next
-    1.91 s, show 0.06 s. These are one-host observations, not comparative or CI
-    timing guarantees. The first public x86-64 workflow passed its 400,000-task
-    regression at commit cd805609d09e5c5f424424e014c222c2b7a2c409 (GitHub Actions
-    run 36491147653). Check later runs at their exact SHA.'
+  notes: 'Local Apple Silicon run on 2026-09-27: fixture generation 73.28 s, check
+    3.46 s, next 1.91 s, show 0.06 s. These are one-host observations, not comparative
+    or CI timing guarantees. The first public x86-64 400,000-task run passed at
+    cd80560 (run 36491147653); the same bounded regression passed on exact df18859da4e9784242f82e895ad1657846727c6c
+    in x86-64 GitHub Actions run 36963433662. No timing guarantee is inferred from
+    that CI pass.'
 - id: agent-skill
   claim: The public repository includes a pecia SKILL.md for agent setup,
     fresh-clone recovery, and routine issue work; its effectiveness across
